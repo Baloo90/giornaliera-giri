@@ -4,12 +4,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Giornale Giri</title>
+  <title>Giornaliera Giri</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="appHeader">
-    <div class="appTitle">Giornale Giri</div>
+    <div class="appTitle">Giornaliera Giri</div>
     <div class="appSub">Offline • Salvataggio locale</div>
   </header>
 
@@ -60,12 +60,12 @@
           </div>
         </div>
 
-        <!-- Ripartizione materiali per operatori (basata sui materiali della giornata selezionata) -->
+        <!-- Ripartizione materiali per operatori -->
         <div class="row">
           <div class="field">
             <label for="insMatOp1">Operatore 1 → Materiale</label>
             <select id="insMatOp1"></select>
-            <div class="hint" id="insMatHint">I materiali vengono presi dalla “Giornata” della data selezionata.</div>
+            <div class="hint" id="insMatHint">Imposta Materiale 1/2 nella “Giornata” della stessa data.</div>
           </div>
           <div class="field">
             <label for="insMatOp2">Operatore 2 → Materiale</label>
@@ -126,30 +126,19 @@
           </div>
         </div>
 
-        <!-- MATERIALI DI GIORNATA (1 + 2 opzionale) -->
+        <!-- MATERIALI DI GIORNATA: ora sono INPUT con autocompilazione + scrittura libera -->
         <div class="divider"></div>
 
         <div class="row">
           <div class="field">
-            <label for="giorMat1Sel">Materiale 1 (da lista)</label>
-            <select id="giorMat1Sel"></select>
-            <div class="hint">Se scegli “Altro…”, compila il campo sotto.</div>
+            <label for="giorMat1">Materiale 1 (obbligatorio)</label>
+            <input id="giorMat1" type="text" placeholder="Es. Plastica" list="dlMateriali" autocomplete="off" />
+            <div class="hint">Puoi scrivere libero o scegliere dall’elenco.</div>
           </div>
           <div class="field">
-            <label for="giorMat1Custom">Materiale 1 (altro)</label>
-            <input id="giorMat1Custom" type="text" placeholder="Es. Ingombranti / Sfalci / ecc." />
-          </div>
-        </div>
-
-        <div class="row">
-          <div class="field">
-            <label for="giorMat2Sel">Materiale 2 (opzionale, da lista)</label>
-            <select id="giorMat2Sel"></select>
-            <div class="hint">Se non serve, lascia “— Nessuno —”.</div>
-          </div>
-          <div class="field">
-            <label for="giorMat2Custom">Materiale 2 (altro)</label>
-            <input id="giorMat2Custom" type="text" placeholder="Es. Ingombranti / Sfalci / ecc." />
+            <label for="giorMat2">Materiale 2 (opzionale)</label>
+            <input id="giorMat2" type="text" placeholder="Es. Organico" list="dlMateriali" autocomplete="off" />
+            <div class="hint">Se non serve, lascia vuoto.</div>
           </div>
         </div>
 
@@ -203,6 +192,7 @@
       </div>
 
       <datalist id="dlCaposquadra"></datalist>
+      <datalist id="dlMateriali"></datalist>
     </section>
 
   </main>
