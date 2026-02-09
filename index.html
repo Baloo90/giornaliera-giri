@@ -1,0 +1,216 @@
+<!-- index.html -->
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Giornale Giri</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="appHeader">
+    <div class="appTitle">Giornale Giri</div>
+    <div class="appSub">Offline • Salvataggio locale</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tabBtn active" data-tab="tab-inserisci">Inserisci</button>
+    <button class="tabBtn" data-tab="tab-giornata">Giornata</button>
+  </nav>
+
+  <main class="container">
+
+    <!-- TAB 1: INSERISCI -->
+    <section id="tab-inserisci" class="tabPanel active">
+      <h2>Inserisci / Modifica giro</h2>
+
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label for="insData">Data</label>
+            <input id="insData" type="date" />
+            <div class="hint" id="insWeekdayHint"></div>
+          </div>
+
+          <div class="field">
+            <label for="insGiro">Giro</label>
+            <select id="insGiro"></select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="insOp1">Operatore 1</label>
+            <input id="insOp1" type="text" placeholder="Nome e cognome" list="dlOperatori" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="insOp2">Operatore 2 (opzionale)</label>
+            <input id="insOp2" type="text" placeholder="Nome e cognome" list="dlOperatori" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="insT1">Targa 1</label>
+            <input id="insT1" type="text" maxlength="7" placeholder="Es. AB123CD" />
+          </div>
+          <div class="field">
+            <label for="insT2">Targa 2 (opzionale)</label>
+            <input id="insT2" type="text" maxlength="7" placeholder="Es. AB123CD" />
+          </div>
+        </div>
+
+        <!-- Ripartizione materiali per operatori (basata sui materiali della giornata selezionata) -->
+        <div class="row">
+          <div class="field">
+            <label for="insMatOp1">Operatore 1 → Materiale</label>
+            <select id="insMatOp1"></select>
+            <div class="hint" id="insMatHint">I materiali vengono presi dalla “Giornata” della data selezionata.</div>
+          </div>
+          <div class="field">
+            <label for="insMatOp2">Operatore 2 → Materiale</label>
+            <select id="insMatOp2"></select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="insNoteGiro">Note (del giro)</label>
+            <textarea id="insNoteGiro" rows="3" placeholder="Note specifiche per questo giro..."></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn primary" id="btnSalva">Salva</button>
+          <button class="btn" id="btnPulisci">Pulisci</button>
+          <button class="btn danger hidden" id="btnAnnullaModifica">Annulla modifica</button>
+        </div>
+
+        <div class="status" id="insStatus" role="status" aria-live="polite"></div>
+      </div>
+
+      <datalist id="dlOperatori"></datalist>
+    </section>
+
+    <!-- TAB 2: GIORNATA -->
+    <section id="tab-giornata" class="tabPanel">
+      <h2>Giornata</h2>
+
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label for="giorData">Seleziona data</label>
+            <input id="giorData" type="date" />
+            <div class="hint" id="giorWeekday"></div>
+          </div>
+
+          <div class="field compact">
+            <label>&nbsp;</label>
+            <button class="btn primary" id="btnCarica">Carica</button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- CAPOSQUADRA DI GIORNATA -->
+        <div class="row">
+          <div class="field">
+            <label for="giorCapo">Caposquadra (di giornata)</label>
+            <input id="giorCapo" type="text" placeholder="Es. Rodolfo Sellati" list="dlCaposquadra" autocomplete="off" />
+            <div class="hint">Vale per tutti i giri della data selezionata.</div>
+          </div>
+
+          <div class="field compact">
+            <label>&nbsp;</label>
+            <button class="btn" id="btnSalvaCapo">Salva Caposquadra</button>
+          </div>
+        </div>
+
+        <!-- MATERIALI DI GIORNATA (1 + 2 opzionale) -->
+        <div class="divider"></div>
+
+        <div class="row">
+          <div class="field">
+            <label for="giorMat1Sel">Materiale 1 (da lista)</label>
+            <select id="giorMat1Sel"></select>
+            <div class="hint">Se scegli “Altro…”, compila il campo sotto.</div>
+          </div>
+          <div class="field">
+            <label for="giorMat1Custom">Materiale 1 (altro)</label>
+            <input id="giorMat1Custom" type="text" placeholder="Es. Ingombranti / Sfalci / ecc." />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="giorMat2Sel">Materiale 2 (opzionale, da lista)</label>
+            <select id="giorMat2Sel"></select>
+            <div class="hint">Se non serve, lascia “— Nessuno —”.</div>
+          </div>
+          <div class="field">
+            <label for="giorMat2Custom">Materiale 2 (altro)</label>
+            <input id="giorMat2Custom" type="text" placeholder="Es. Ingombranti / Sfalci / ecc." />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field compact">
+            <label>&nbsp;</label>
+            <button class="btn" id="btnSalvaMateriali">Salva Materiali</button>
+          </div>
+          <div class="field">
+            <div class="hint" id="giorMatHint"></div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="row">
+          <div class="field">
+            <label for="giorNote">Note (di giornata)</label>
+            <textarea id="giorNote" rows="2" placeholder="Note generali della giornata..."></textarea>
+          </div>
+          <div class="field compact">
+            <label>&nbsp;</label>
+            <button class="btn" id="btnSalvaNoteGiornata">Salva Note</button>
+          </div>
+        </div>
+
+        <div class="status" id="giorStatus" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="card">
+        <div class="tableHeader">
+          <div class="tableTitle">Elenco giri della giornata</div>
+          <div class="tableHint">Lista completa (anche giri non compilati). Usa “Modifica” per inserire o correggere.</div>
+        </div>
+
+        <div class="tableWrap">
+          <table class="grid" id="tblGiornata">
+            <thead>
+              <tr>
+                <th class="colGiro">Giro</th>
+                <th>Operatori</th>
+                <th>Furgoni (targhe)</th>
+                <th>Ripartizione materiali</th>
+                <th>Note giro</th>
+                <th class="colAzioni">Azioni</th>
+              </tr>
+            </thead>
+            <tbody id="tblBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <datalist id="dlCaposquadra"></datalist>
+    </section>
+
+  </main>
+
+  <footer class="appFooter">
+    <span id="footerInfo"></span>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

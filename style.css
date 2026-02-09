@@ -1,0 +1,172 @@
+/* style.css */
+:root{
+  --bg:#0b0f14;
+  --card:#121826;
+  --text:#e7eefc;
+  --muted:#a7b4cc;
+  --line:#263149;
+  --primary:#3b82f6;
+  --danger:#ef4444;
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+  --r:16px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: radial-gradient(1200px 700px at 20% -10%, rgba(59,130,246,.25), transparent 55%),
+              radial-gradient(900px 600px at 100% 0%, rgba(34,197,94,.18), transparent 55%),
+              var(--bg);
+  color:var(--text);
+}
+
+.appHeader{padding:18px 16px 10px}
+.appTitle{font-size:20px; font-weight:800; letter-spacing:.2px}
+.appSub{font-size:12px; color:var(--muted); margin-top:4px}
+
+.tabs{display:flex; gap:10px; padding:8px 16px 12px}
+.tabBtn{
+  flex:1;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.03);
+  color:var(--text);
+  padding:12px 10px;
+  border-radius:14px;
+  font-weight:700;
+}
+.tabBtn.active{
+  border-color: rgba(59,130,246,.6);
+  background: rgba(59,130,246,.15);
+}
+
+.container{padding:0 16px 70px; max-width:980px; margin:0 auto}
+
+.tabPanel{display:none}
+.tabPanel.active{display:block}
+
+h2{margin:8px 2px 10px; font-size:16px}
+
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.02));
+  border:1px solid var(--line);
+  border-radius: var(--r);
+  padding:14px;
+  margin: 10px 0 14px;
+  box-shadow: var(--shadow);
+}
+
+.row{display:flex; gap:12px; flex-wrap:wrap}
+
+.field{flex:1; min-width:220px}
+.field.compact{min-width:140px; flex: 0 0 160px}
+
+label{display:block; font-size:12px; color:var(--muted); margin:2px 2px 6px}
+
+input, select, textarea{
+  width:100%;
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.03);
+  color: var(--text);
+  padding: 12px 12px;
+  border-radius: 14px;
+  outline:none;
+}
+textarea{resize:vertical}
+
+input:focus, select:focus, textarea:focus{
+  border-color: rgba(59,130,246,.7);
+  box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+}
+
+.hint{font-size:12px; color:var(--muted); margin:6px 4px 0}
+
+.actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px}
+
+.btn{
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.03);
+  color: var(--text);
+  padding: 11px 12px;
+  border-radius: 14px;
+  font-weight:800;
+}
+.btn.primary{border-color: rgba(59,130,246,.65); background: rgba(59,130,246,.18)}
+.btn.danger{border-color: rgba(239,68,68,.65); background: rgba(239,68,68,.14)}
+.hidden{display:none!important}
+
+.status{margin-top:10px; font-size:13px; color:var(--muted)}
+
+.divider{height:1px; background: var(--line); margin: 12px 0}
+
+.tableHeader{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom: 10px;
+}
+.tableTitle{font-weight:900}
+.tableHint{font-size:12px; color:var(--muted)}
+
+.tableWrap{overflow:auto; border-radius:14px; border:1px solid var(--line)}
+table.grid{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  min-width: 980px;
+}
+.grid thead th{
+  position:sticky;
+  top:0;
+  background: rgba(10,14,20,.92);
+  backdrop-filter: blur(6px);
+  border-bottom:1px solid var(--line);
+  padding: 10px 10px;
+  text-align:left;
+  font-size: 12px;
+  color: var(--muted);
+}
+.grid tbody td{
+  border-bottom:1px solid rgba(38,49,73,.6);
+  padding: 10px 10px;
+  vertical-align:top;
+  font-size: 13px;
+}
+.grid tbody tr:nth-child(even){background: rgba(255,255,255,.02)}
+
+.colGiro{width:70px}
+.colAzioni{width:190px}
+
+.badgeEmpty{
+  display:inline-block;
+  font-size:12px;
+  color: var(--muted);
+  padding: 4px 8px;
+  border:1px dashed rgba(167,180,204,.45);
+  border-radius: 999px;
+}
+
+.actionsCell{display:flex; gap:8px; flex-wrap:wrap}
+.smallBtn{
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-weight:900;
+  font-size: 12px;
+}
+.smallBtn.primary{border-color: rgba(59,130,246,.65); background: rgba(59,130,246,.18)}
+.smallBtn.danger{border-color: rgba(239,68,68,.65); background: rgba(239,68,68,.14)}
+.smallBtn.disabled{opacity:.45; pointer-events:none}
+
+.appFooter{
+  position:fixed;
+  left:0; right:0; bottom:0;
+  padding:10px 16px;
+  background: rgba(10,14,20,.75);
+  border-top:1px solid rgba(38,49,73,.7);
+  backdrop-filter: blur(8px);
+  font-size:12px;
+  color: var(--muted);
+}
