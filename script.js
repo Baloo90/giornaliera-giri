@@ -2,16 +2,12 @@
 (() => {
   "use strict";
 
-  // ====== CONFIG ======
-  const APP_KEY = "giornale_giri_v2";
+  const APP_KEY = "giornaliera_giri_v3";
 
-  // Giri 1..19
   const DEFAULT_GIRI = Array.from({ length: 19 }, (_, i) => (i + 1).toString());
 
-  // Materiali base
   const PRESET_MATERIALI = ["Plastica", "Vetro", "Carta", "Organico", "Secco"];
 
-  // Caposquadra (seed iniziale, modificabile e ampliabile)
   const DEFAULT_CAPOSQUADRA = [
     "Rodolfo Sellati",
     "Andrea Lo Biundo",
@@ -22,7 +18,7 @@
     "Cristina Saccu",
   ];
 
-  // ====== DOM ======
+  // ===== DOM =====
   const tabBtns = [...document.querySelectorAll(".tabBtn")];
   const panels = [...document.querySelectorAll(".tabPanel")];
 
@@ -52,35 +48,33 @@
   const giorCapo = document.getElementById("giorCapo");
   const btnSalvaCapo = document.getElementById("btnSalvaCapo");
 
-  const giorMat1Sel = document.getElementById("giorMat1Sel");
-  const giorMat1Custom = document.getElementById("giorMat1Custom");
-  const giorMat2Sel = document.getElementById("giorMat2Sel");
-  const giorMat2Custom = document.getElementById("giorMat2Custom");
+  const giorMat1 = document.getElementById("giorMat1");
+  const giorMat2 = document.getElementById("giorMat2");
   const btnSalvaMateriali = document.getElementById("btnSalvaMateriali");
   const giorMatHint = document.getElementById("giorMatHint");
 
   const giorNote = document.getElementById("giorNote");
   const btnSalvaNoteGiornata = document.getElementById("btnSalvaNoteGiornata");
   const dlCaposquadra = document.getElementById("dlCaposquadra");
+  const dlMateriali = document.getElementById("dlMateriali");
   const giorStatus = document.getElementById("giorStatus");
 
   const footerInfo = document.getElementById("footerInfo");
 
-  // ====== STATE ======
+  // ===== STATE =====
   let db = loadDB();
   let editContext = null; // { dateISO, giro }
 
-  // ====== INIT ======
   init();
 
   function init() {
     footerInfo.textContent =
-      "Tip: Imposta Materiale 1/2 nella Giornata, poi in ogni giro scegli chi fa cosa (Op1→Mat1/Mat2).";
+      "Imposta Materiale 1/2 in Giornata, poi per ogni giro scegli Op1→Materiale 1/2 e Op2→Materiale 1/2.";
 
     fillGiroSelect();
     ensureDefaults();
     refreshDatalists();
-    initMaterialSelectors();
+    refreshMaterialDatalist();
 
     const todayISO = toISODate(new Date());
     insData.value = todayISO;
@@ -93,12 +87,12 @@
     insData.addEventListener("change", () => {
       updateWeekdayHints();
       cancelEdit("Hai cambiato data: modifica annullata.");
-      refreshInsertMaterialOptions(); // aggiorna dropdown materiali op1/op2
+      refreshInsertMaterialOptions();
     });
 
     giorData.addEventListener("change", () => {
       updateWeekdayHints();
-      loadGiornata(); // ricarica e aggiorna anche i materiali
+      loadGiornata();
     });
 
     btnCarica.addEventListener("click", loadGiornata);
@@ -115,14 +109,11 @@
     btnSalvaMateriali.addEventListener("click", onSaveMaterialiGiornata);
     btnSalvaNoteGiornata.addEventListener("click", onSaveNoteGiornata);
 
-    // Se l’utente seleziona “Altro…” abilitiamo di fatto il custom (semplice: lo lasciamo sempre scrivibile)
-    // Ma aggiorniamo hint riassuntivo
-    [giorMat1Sel, giorMat1Custom, giorMat2Sel, giorMat2Custom].forEach(el => {
+    [giorMat1, giorMat2].forEach(el => {
       el.addEventListener("input", updateMaterialHint);
       el.addEventListener("change", updateMaterialHint);
     });
 
-    // First load
     loadGiornata();
     refreshInsertMaterialOptions();
   }
@@ -145,10 +136,14 @@
 
   function ensureDefaults() {
     db.operatori = Array.isArray(db.operatori) ? db.operatori : [];
+    db.materiali = Array.isArray(db.materiali) ? db.materiali : [];
     db.caposquadraList = Array.isArray(db.caposquadraList) ? db.caposquadraList : [];
     db.dates = db.dates && typeof db.dates === "object" ? db.dates : {};
 
     if (db.caposquadraList.length === 0) db.caposquadraList = [...DEFAULT_CAPOSQUADRA];
+
+    // seed materiali con preset
+    PRESET_MATERIALI.forEach(m => pushMaterialIfNeeded(m));
 
     saveDB();
   }
@@ -169,77 +164,53 @@
     });
   }
 
-  // ====== MATERIAL SELECTORS (GIORNATA) ======
-  function initMaterialSelectors() {
-    // Materiale 1
-    giorMat1Sel.innerHTML = "";
-    PRESET_MATERIALI.forEach(m => addOption(giorMat1Sel, m, m));
-    addOption(giorMat1Sel, "__ALTRO__", "Altro...");
-    // Materiale 2
-    giorMat2Sel.innerHTML = "";
-    addOption(giorMat2Sel, "__NONE__", "— Nessuno —");
-    PRESET_MATERIALI.forEach(m => addOption(giorMat2Sel, m, m));
-    addOption(giorMat2Sel, "__ALTRO__", "Altro...");
-
-    // default
-    giorMat1Sel.value = PRESET_MATERIALI[0];
-    giorMat2Sel.value = "__NONE__";
-    updateMaterialHint();
+  function refreshMaterialDatalist() {
+    dlMateriali.innerHTML = "";
+    uniqueSorted(db.materiali).forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      dlMateriali.appendChild(opt);
+    });
   }
 
-  function addOption(sel, val, text) {
-    const opt = document.createElement("option");
-    opt.value = val;
-    opt.textContent = text;
-    sel.appendChild(opt);
-  }
-
-  function resolveMaterial(selVal, customVal) {
-    if (!selVal) return "";
-    if (selVal === "__NONE__") return "";
-    if (selVal === "__ALTRO__") return (customVal || "").trim();
-    return selVal; // preset
-  }
-
-  function updateMaterialHint() {
-    const m1 = resolveMaterial(giorMat1Sel.value, giorMat1Custom.value);
-    const m2 = resolveMaterial(giorMat2Sel.value, giorMat2Custom.value);
-
-    const parts = [];
-    parts.push(m1 ? `Materiale 1: ${m1}` : "Materiale 1: (vuoto)");
-    parts.push(m2 ? `Materiale 2: ${m2}` : "Materiale 2: (nessuno)");
-    giorMatHint.textContent = parts.join(" • ");
-  }
-
+  // ===== MATERIALI GIORNATA =====
   function onSaveMaterialiGiornata() {
     const dateISO = giorData.value || toISODate(new Date());
     const day = getOrCreateDay(dateISO);
 
-    const m1 = resolveMaterial(giorMat1Sel.value, giorMat1Custom.value);
-    const m2 = resolveMaterial(giorMat2Sel.value, giorMat2Custom.value);
+    const m1 = normalizeMaterial(giorMat1.value);
+    const m2 = normalizeMaterial(giorMat2.value);
 
-    if (!m1) {
-      return setGiorStatus("Materiale 1 non può essere vuoto. Scegli dalla lista o usa 'Altro...'.");
-    }
+    if (!m1) return setGiorStatus("Materiale 1 è obbligatorio (puoi anche scriverlo a mano).");
 
     day.material1 = m1;
-    day.material2 = m2; // può essere ""
-    day.material1_meta = { sel: giorMat1Sel.value, custom: (giorMat1Custom.value || "").trim() };
-    day.material2_meta = { sel: giorMat2Sel.value, custom: (giorMat2Custom.value || "").trim() };
+    day.material2 = m2; // può essere vuoto
+
+    pushMaterialIfNeeded(m1);
+    if (m2) pushMaterialIfNeeded(m2);
 
     db.dates[dateISO] = day;
     saveDB();
 
-    // aggiorna dropdown in inserimento (per ripartizione op1/op2)
+    refreshMaterialDatalist();
     refreshInsertMaterialOptions();
-
-    // opzionale: se c'è già roba salvata nei giri con matRef non più valida, la lasciamo com’è (non distruggiamo dati)
-    setGiorStatus("Materiali salvati.");
     updateMaterialHint();
+
+    setGiorStatus("Materiali salvati.");
     loadGiornata();
   }
 
-  // ====== MATERIAL OPTIONS (INSERISCI) ======
+  function updateMaterialHint() {
+    const m1 = normalizeMaterial(giorMat1.value);
+    const m2 = normalizeMaterial(giorMat2.value);
+    giorMatHint.textContent = `Materiale 1: ${m1 || "(vuoto)"} • Materiale 2: ${m2 || "(nessuno)"}`;
+  }
+
+  function normalizeMaterial(s) {
+    return (s || "").trim().replace(/\s+/g, " ");
+  }
+
+  // ===== MATERIALI IN INSERISCI (Op1/Op2 scelgono tra Materiale1/2 della data) =====
   function refreshInsertMaterialOptions() {
     const dateISO = insData.value || toISODate(new Date());
     const day = getOrCreateDay(dateISO);
@@ -247,42 +218,40 @@
     const m1 = (day.material1 || "").trim();
     const m2 = (day.material2 || "").trim();
 
-    // Opzioni: Mat1, Mat2 se presente, e "—"
     const opts = [];
     if (m1) opts.push({ v: "M1", t: `Materiale 1: ${m1}` });
     if (m2) opts.push({ v: "M2", t: `Materiale 2: ${m2}` });
     opts.push({ v: "", t: "— (non specificato) —" });
 
-    // rebuild selects
     rebuildSelect(insMatOp1, opts);
     rebuildSelect(insMatOp2, opts);
 
-    // default: op1 → M1, op2 → M2 se esiste altrimenti M1
     if (!editContext) {
       insMatOp1.value = m1 ? "M1" : "";
-      if (m2) insMatOp2.value = "M2";
-      else insMatOp2.value = m1 ? "M1" : "";
+      insMatOp2.value = m2 ? "M2" : (m1 ? "M1" : "");
     }
   }
 
   function rebuildSelect(sel, opts) {
     const current = sel.value;
     sel.innerHTML = "";
-    opts.forEach(o => addOption(sel, o.v, o.t));
-    // prova a ripristinare se esiste
+    opts.forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.v;
+      opt.textContent = o.t;
+      sel.appendChild(opt);
+    });
     sel.value = opts.some(o => o.v === current) ? current : opts[0].v;
   }
 
   function materialLabelForRef(dateISO, ref) {
     const day = getOrCreateDay(dateISO);
-    const m1 = (day.material1 || "").trim();
-    const m2 = (day.material2 || "").trim();
-    if (ref === "M1") return m1 || "";
-    if (ref === "M2") return m2 || "";
+    if (ref === "M1") return (day.material1 || "").trim();
+    if (ref === "M2") return (day.material2 || "").trim();
     return "";
   }
 
-  // ====== SAVE GIRO ======
+  // ===== SAVE GIRO =====
   function onSaveGiro() {
     const dateISO = insData.value || toISODate(new Date());
     const giro = insGiro.value;
@@ -293,36 +262,25 @@
     const t2 = normalizeTarga(insT2.value);
     const note = (insNoteGiro.value || "").trim();
 
-    // Ripartizione materiali
     const matRefOp1 = insMatOp1.value || "";
     const matRefOp2 = insMatOp2.value || "";
 
     if (!dateISO) return setInsStatus("Errore: data non valida.");
     if (!giro) return setInsStatus("Errore: seleziona un giro.");
 
-    // Consenti salvataggio anche solo per ripartizione? Sì, ma almeno qualcosa deve esserci
-    const hasSomething =
-      !!op1 || !!op2 || !!t1 || !!t2 || !!note || !!matRefOp1 || !!matRefOp2;
-
-    if (!hasSomething) {
-      return setInsStatus("Niente da salvare: inserisci almeno un dato (operatore, targa, note o materiale).");
-    }
+    const hasSomething = !!op1 || !!op2 || !!t1 || !!t2 || !!note || !!matRefOp1 || !!matRefOp2;
+    if (!hasSomething) return setInsStatus("Niente da salvare: inserisci almeno un dato.");
 
     const day = getOrCreateDay(dateISO);
     day.giri = day.giri || {};
     day.giri[giro] = {
-      op1,
-      op2,
-      t1,
-      t2,
-      note,
-      matRefOp1,
-      matRefOp2,
+      op1, op2, t1, t2, note,
+      matRefOp1, matRefOp2,
       updatedAt: Date.now()
     };
 
-    pushOperatorIfNeeded(op1);
-    pushOperatorIfNeeded(op2);
+    pushOperatoreIfNeeded(op1);
+    pushOperatoreIfNeeded(op2);
 
     db.dates[dateISO] = day;
     saveDB();
@@ -332,74 +290,42 @@
     clearInsertForm(true);
 
     if (giorData.value === dateISO) loadGiornata();
-
     endEditMode();
   }
 
-  function pushOperatorIfNeeded(name) {
+  function pushOperatoreIfNeeded(name) {
     const n = (name || "").trim();
     if (!n) return;
     const exists = db.operatori.some(x => x.toLowerCase() === n.toLowerCase());
     if (!exists) db.operatori.push(n);
   }
 
-  // ====== GIORNATA: LOAD + TABLE ======
+  function pushMaterialIfNeeded(mat) {
+    const m = (mat || "").trim();
+    if (!m) return;
+    const exists = db.materiali.some(x => x.toLowerCase() === m.toLowerCase());
+    if (!exists) db.materiali.push(m);
+  }
+
+  // ===== GIORNATA LOAD + TABLE =====
   function loadGiornata() {
     const dateISO = giorData.value || toISODate(new Date());
     if (!dateISO) return setGiorStatus("Errore: data non valida.");
 
     const day = getOrCreateDay(dateISO);
 
-    // caposquadra + note
     giorCapo.value = day.caposquadra || "";
     giorNote.value = day.noteGiornata || "";
 
-    // materiali: se meta esiste ripristiniamo selezioni UI, altrimenti inferiamo
-    restoreMaterialUIFromDay(day);
+    // materiali
+    giorMat1.value = day.material1 || "";
+    giorMat2.value = day.material2 || "";
+    updateMaterialHint();
 
-    // weekday
     giorWeekday.textContent = formatWeekdayItalian(dateISO);
-
-    // table
     renderTable(dateISO, day);
 
     setGiorStatus("Caricato.");
-  }
-
-  function restoreMaterialUIFromDay(day) {
-    // Material 1
-    if (day.material1_meta && typeof day.material1_meta === "object") {
-      giorMat1Sel.value = day.material1_meta.sel || PRESET_MATERIALI[0];
-      giorMat1Custom.value = day.material1_meta.custom || "";
-    } else {
-      // fallback: se materiale1 combacia con preset
-      if (PRESET_MATERIALI.includes(day.material1)) {
-        giorMat1Sel.value = day.material1;
-        giorMat1Custom.value = "";
-      } else if (day.material1) {
-        giorMat1Sel.value = "__ALTRO__";
-        giorMat1Custom.value = day.material1;
-      }
-    }
-
-    // Material 2
-    if (day.material2_meta && typeof day.material2_meta === "object") {
-      giorMat2Sel.value = day.material2_meta.sel || "__NONE__";
-      giorMat2Custom.value = day.material2_meta.custom || "";
-    } else {
-      if (!day.material2) {
-        giorMat2Sel.value = "__NONE__";
-        giorMat2Custom.value = "";
-      } else if (PRESET_MATERIALI.includes(day.material2)) {
-        giorMat2Sel.value = day.material2;
-        giorMat2Custom.value = "";
-      } else {
-        giorMat2Sel.value = "__ALTRO__";
-        giorMat2Custom.value = day.material2;
-      }
-    }
-
-    updateMaterialHint();
   }
 
   function renderTable(dateISO, day) {
@@ -407,59 +333,48 @@
     tblBody.innerHTML = "";
 
     DEFAULT_GIRI.forEach(giro => {
-      const row = document.createElement("tr");
       const entry = giriData[giro];
+      const row = document.createElement("tr");
 
-      // Giro
       const tdGiro = document.createElement("td");
       tdGiro.textContent = giro;
       row.appendChild(tdGiro);
 
-      // Operatori
       const tdOps = document.createElement("td");
-      if (entry && (entry.op1 || entry.op2)) {
-        tdOps.textContent = [entry.op1, entry.op2].filter(Boolean).join(" • ");
-      } else {
-        tdOps.innerHTML = `<span class="badgeEmpty">—</span>`;
-      }
+      tdOps.innerHTML = (entry && (entry.op1 || entry.op2))
+        ? escapeHtml([entry.op1, entry.op2].filter(Boolean).join(" • "))
+        : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdOps);
 
-      // Targhe
       const tdT = document.createElement("td");
-      if (entry && (entry.t1 || entry.t2)) {
-        tdT.textContent = [entry.t1, entry.t2].filter(Boolean).join(" • ");
-      } else {
-        tdT.innerHTML = `<span class="badgeEmpty">—</span>`;
-      }
+      tdT.innerHTML = (entry && (entry.t1 || entry.t2))
+        ? escapeHtml([entry.t1, entry.t2].filter(Boolean).join(" • "))
+        : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdT);
 
-      // Ripartizione materiali
       const tdM = document.createElement("td");
       if (entry && (entry.matRefOp1 || entry.matRefOp2)) {
         const op1Name = entry.op1 || "Op1";
         const op2Name = entry.op2 || "Op2";
-
-        const m1 = materialLabelForRef(dateISO, entry.matRefOp1) || "";
-        const m2 = materialLabelForRef(dateISO, entry.matRefOp2) || "";
+        const mOp1 = materialLabelForRef(dateISO, entry.matRefOp1) || "(?)";
+        const mOp2 = materialLabelForRef(dateISO, entry.matRefOp2) || "(?)";
 
         const parts = [];
-        if (entry.matRefOp1) parts.push(`${op1Name} → ${m1 || "(?)"}`);
-        if (entry.op2 && entry.matRefOp2) parts.push(`${op2Name} → ${m2 || "(?)"}`);
+        if (entry.matRefOp1) parts.push(`${op1Name} → ${mOp1}`);
+        if (entry.op2 && entry.matRefOp2) parts.push(`${op2Name} → ${mOp2}`);
 
-        tdM.textContent = parts.length ? parts.join(" • ") : "";
-        if (!parts.length) tdM.innerHTML = `<span class="badgeEmpty">—</span>`;
+        tdM.textContent = parts.length ? parts.join(" • ") : "—";
       } else {
         tdM.innerHTML = `<span class="badgeEmpty">—</span>`;
       }
       row.appendChild(tdM);
 
-      // Note giro
       const tdN = document.createElement("td");
-      if (entry && entry.note) tdN.textContent = entry.note;
-      else tdN.innerHTML = `<span class="badgeEmpty">—</span>`;
+      tdN.innerHTML = (entry && entry.note)
+        ? escapeHtml(entry.note)
+        : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdN);
 
-      // Azioni
       const tdA = document.createElement("td");
       tdA.className = "actionsCell";
 
@@ -488,7 +403,6 @@
     insData.value = dateISO;
     insGiro.value = giro;
 
-    // Aggiorna opzioni materiali in base alla giornata selezionata
     refreshInsertMaterialOptions();
 
     insOp1.value = entry?.op1 || "";
@@ -498,9 +412,7 @@
     insNoteGiro.value = entry?.note || "";
 
     insMatOp1.value = entry?.matRefOp1 || (day.material1 ? "M1" : "");
-    // se op2 esiste e materiale2 esiste, default M2, altrimenti M1
-    if (entry?.matRefOp2 !== undefined) insMatOp2.value = entry.matRefOp2 || "";
-    else insMatOp2.value = day.material2 ? "M2" : (day.material1 ? "M1" : "");
+    insMatOp2.value = entry?.matRefOp2 || (day.material2 ? "M2" : (day.material1 ? "M1" : ""));
 
     editContext = { dateISO, giro };
     btnAnnullaModifica.classList.remove("hidden");
@@ -524,7 +436,7 @@
     }
   }
 
-  // ====== CAPOSQUADRA / NOTE GIORNATA ======
+  // ===== CAPOSQUADRA / NOTE =====
   function onSaveCaposquadra() {
     const dateISO = giorData.value || toISODate(new Date());
     const capo = normalizeName(giorCapo.value);
@@ -559,7 +471,7 @@
     if (!exists) db.caposquadraList.push(n);
   }
 
-  // ====== EDIT MODE HELPERS ======
+  // ===== EDIT HELPERS =====
   function endEditMode() {
     editContext = null;
     btnAnnullaModifica.classList.add("hidden");
@@ -582,18 +494,17 @@
     insT1.value = "";
     insT2.value = "";
     insNoteGiro.value = "";
-    // materiali op1/op2 vengono riallineati
     refreshInsertMaterialOptions();
     updateWeekdayHints();
   }
 
-  // ====== WEEKDAY + FORMATTING ======
+  // ===== DATE / FORMAT =====
   function updateWeekdayHints() {
-    const dateISO1 = insData.value;
-    insWeekdayHint.textContent = dateISO1 ? formatWeekdayItalian(dateISO1) : "";
+    const d1 = insData.value;
+    insWeekdayHint.textContent = d1 ? formatWeekdayItalian(d1) : "";
 
-    const dateISO2 = giorData.value;
-    giorWeekday.textContent = dateISO2 ? formatWeekdayItalian(dateISO2) : "";
+    const d2 = giorData.value;
+    giorWeekday.textContent = d2 ? formatWeekdayItalian(d2) : "";
   }
 
   function formatWeekdayItalian(dateISO) {
@@ -626,7 +537,6 @@
     return `${y}-${m}-${d}`;
   }
 
-  // ====== NORMALIZATION ======
   function normalizeName(s) {
     return (s || "").trim().replace(/\s+/g, " ");
   }
@@ -635,16 +545,16 @@
     return (s || "").trim().toUpperCase().replace(/\s+/g, "");
   }
 
-  // ====== DB ======
+  // ===== DB =====
   function loadDB() {
     try {
       const raw = localStorage.getItem(APP_KEY);
-      if (!raw) return { dates: {}, operatori: [], caposquadraList: [] };
+      if (!raw) return { dates: {}, operatori: [], materiali: [], caposquadraList: [] };
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") throw new Error("DB invalid");
       return parsed;
     } catch {
-      return { dates: {}, operatori: [], caposquadraList: [] };
+      return { dates: {}, operatori: [], materiali: [], caposquadraList: [] };
     }
   }
 
@@ -658,17 +568,15 @@
       existing.giri = existing.giri && typeof existing.giri === "object" ? existing.giri : {};
       existing.caposquadra = existing.caposquadra || "";
       existing.noteGiornata = existing.noteGiornata || "";
-      existing.material1 = (existing.material1 || "").trim();
-      existing.material2 = (existing.material2 || "").trim();
+      existing.material1 = existing.material1 || "";
+      existing.material2 = existing.material2 || "";
       return existing;
     }
     return {
       caposquadra: "",
       noteGiornata: "",
-      material1: "", // obbligatorio quando lo imposti
+      material1: "",
       material2: "",
-      material1_meta: null,
-      material2_meta: null,
       giri: {}
     };
   }
@@ -688,7 +596,17 @@
     return out;
   }
 
-  // ====== UI STATUS ======
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, ch => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      '"':"&quot;",
+      "'":"&#39;"
+    }[ch]));
+  }
+
+  // ===== STATUS =====
   function setInsStatus(msg) { insStatus.textContent = msg || ""; }
   function setGiorStatus(msg) { giorStatus.textContent = msg || ""; }
 })();
