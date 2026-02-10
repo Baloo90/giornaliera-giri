@@ -10,7 +10,7 @@
 <body>
   <header class="appHeader">
     <div class="appTitle">Giornaliera Giri</div>
-    <div class="appSub">Offline • Salvataggio locale</div>
+    <div class="appSub">Salvataggio locale • Test con WebIntoApp</div>
   </header>
 
   <nav class="tabs">
@@ -35,6 +35,7 @@
           <div class="field">
             <label for="insGiro">Giro</label>
             <select id="insGiro"></select>
+            <div class="hint">Include anche eventuali “giri speciali” della giornata.</div>
           </div>
         </div>
 
@@ -70,6 +71,7 @@
           <div class="field">
             <label for="insMatOp2">Operatore 2 → Materiale</label>
             <select id="insMatOp2"></select>
+            <div class="hint">Non viene selezionato automaticamente: lo decidi tu.</div>
           </div>
         </div>
 
@@ -112,6 +114,27 @@
 
         <div class="divider"></div>
 
+        <!-- TOOLBAR -->
+        <div class="row">
+          <div class="field">
+            <label for="giorCerca">Cerca nella giornata</label>
+            <input id="giorCerca" type="text" placeholder="Giro / Operatore / Targa / Note..." autocomplete="off" />
+            <div class="hint">Filtra in tempo reale la tabella.</div>
+          </div>
+
+          <div class="field compact">
+            <label>&nbsp;</label>
+            <button class="btn" id="btnCopiaIeri">Copia da ieri</button>
+          </div>
+
+          <div class="field compact">
+            <label>&nbsp;</label>
+            <button class="btn" id="btnPdf">Esporta PDF</button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
         <!-- CAPOSQUADRA DI GIORNATA -->
         <div class="row">
           <div class="field">
@@ -126,7 +149,7 @@
           </div>
         </div>
 
-        <!-- MATERIALI DI GIORNATA: ora sono INPUT con autocompilazione + scrittura libera -->
+        <!-- MATERIALI DI GIORNATA -->
         <div class="divider"></div>
 
         <div class="row">
@@ -165,13 +188,29 @@
           </div>
         </div>
 
+        <!-- GIRI SPECIALI -->
+        <div class="divider"></div>
+
+        <div class="row">
+          <div class="field">
+            <label for="giorGiroSpeciale">Aggiungi giro speciale (solo per questa giornata)</label>
+            <input id="giorGiroSpeciale" type="text" placeholder="Es. Giro Centro Storico / Extra Ingombranti..." autocomplete="off" />
+            <div class="hint">Comparirà in tabella e anche nel TAB Inserisci (solo per questa data).</div>
+          </div>
+
+          <div class="field compact">
+            <label>&nbsp;</label>
+            <button class="btn" id="btnAggiungiGiroSpeciale">Aggiungi</button>
+          </div>
+        </div>
+
         <div class="status" id="giorStatus" role="status" aria-live="polite"></div>
       </div>
 
       <div class="card">
         <div class="tableHeader">
           <div class="tableTitle">Elenco giri della giornata</div>
-          <div class="tableHint">Lista completa (anche giri non compilati). Usa “Modifica” per inserire o correggere.</div>
+          <div class="tableHint">Lista completa + giri speciali. “Modifica” sempre disponibile.</div>
         </div>
 
         <div class="tableWrap">
