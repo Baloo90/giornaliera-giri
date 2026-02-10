@@ -2,10 +2,9 @@
 (() => {
   "use strict";
 
-  const APP_KEY = "giornaliera_giri_v3";
+  const APP_KEY = "giornaliera_giri_v4";
 
   const DEFAULT_GIRI = Array.from({ length: 19 }, (_, i) => (i + 1).toString());
-
   const PRESET_MATERIALI = ["Plastica", "Vetro", "Carta", "Organico", "Secco"];
 
   const DEFAULT_CAPOSQUADRA = [
@@ -45,6 +44,10 @@
   const btnCarica = document.getElementById("btnCarica");
   const tblBody = document.getElementById("tblBody");
 
+  const giorCerca = document.getElementById("giorCerca");
+  const btnCopiaIeri = document.getElementById("btnCopiaIeri");
+  const btnPdf = document.getElementById("btnPdf");
+
   const giorCapo = document.getElementById("giorCapo");
   const btnSalvaCapo = document.getElementById("btnSalvaCapo");
 
@@ -55,6 +58,10 @@
 
   const giorNote = document.getElementById("giorNote");
   const btnSalvaNoteGiornata = document.getElementById("btnSalvaNoteGiornata");
+
+  const giorGiroSpeciale = document.getElementById("giorGiroSpeciale");
+  const btnAggiungiGiroSpeciale = document.getElementById("btnAggiungiGiroSpeciale");
+
   const dlCaposquadra = document.getElementById("dlCaposquadra");
   const dlMateriali = document.getElementById("dlMateriali");
   const giorStatus = document.getElementById("giorStatus");
@@ -63,15 +70,15 @@
 
   // ===== STATE =====
   let db = loadDB();
-  let editContext = null; // { dateISO, giro }
+  let editContext = null; // { dateISO, giroId }
+  let lastRenderedRows = []; // for search filtering
 
   init();
 
   function init() {
     footerInfo.textContent =
-      "Imposta Materiale 1/2 in Giornata, poi per ogni giro scegli Op1→Materiale 1/2 e Op2→Materiale 1/2.";
+      "Nota: con WebIntoApp (URL remoto) serve internet per aprire l’app. I dati però restano salvati localmente.";
 
-    fillGiroSelect();
     ensureDefaults();
     refreshDatalists();
     refreshMaterialDatalist();
@@ -87,6 +94,7 @@
     insData.addEventListener("change", () => {
       updateWeekdayHints();
       cancelEdit("Hai cambiato data: modifica annullata.");
+      rebuildGiroSelectForInsert();
       refreshInsertMaterialOptions();
     });
 
@@ -109,12 +117,21 @@
     btnSalvaMateriali.addEventListener("click", onSaveMaterialiGiornata);
     btnSalvaNoteGiornata.addEventListener("click", onSaveNoteGiornata);
 
+    btnCopiaIeri.addEventListener("click", onCopiaDaIeri);
+    btnPdf.addEventListener("click", onExportPdf);
+
+    btnAggiungiGiroSpeciale.addEventListener("click", onAggiungiGiroSpeciale);
+
     [giorMat1, giorMat2].forEach(el => {
       el.addEventListener("input", updateMaterialHint);
       el.addEventListener("change", updateMaterialHint);
     });
 
+    giorCerca.addEventListener("input", applySearchFilter);
+
+    // First load
     loadGiornata();
+    rebuildGiroSelectForInsert();
     refreshInsertMaterialOptions();
   }
 
@@ -124,16 +141,7 @@
     if (tabId === "tab-giornata") loadGiornata();
   }
 
-  function fillGiroSelect() {
-    insGiro.innerHTML = "";
-    DEFAULT_GIRI.forEach(g => {
-      const opt = document.createElement("option");
-      opt.value = g;
-      opt.textContent = `Giro ${g}`;
-      insGiro.appendChild(opt);
-    });
-  }
-
+  // ===== DEFAULTS / DATALISTS =====
   function ensureDefaults() {
     db.operatori = Array.isArray(db.operatori) ? db.operatori : [];
     db.materiali = Array.isArray(db.materiali) ? db.materiali : [];
@@ -142,7 +150,6 @@
 
     if (db.caposquadraList.length === 0) db.caposquadraList = [...DEFAULT_CAPOSQUADRA];
 
-    // seed materiali con preset
     PRESET_MATERIALI.forEach(m => pushMaterialIfNeeded(m));
 
     saveDB();
@@ -173,13 +180,46 @@
     });
   }
 
+  // ===== GIRI LIST (standard + special per-date) =====
+  function rebuildGiroSelectForInsert() {
+    const dateISO = insData.value || toISODate(new Date());
+    const day = getOrCreateDay(dateISO);
+
+    insGiro.innerHTML = "";
+
+    // standard 1..19
+    DEFAULT_GIRI.forEach(g => {
+      const opt = document.createElement("option");
+      opt.value = g; // giroId standard = "1".."19"
+      opt.textContent = `Giro ${g}`;
+      insGiro.appendChild(opt);
+    });
+
+    // special
+    const specials = Array.isArray(day.specialGiri) ? day.specialGiri : [];
+    specials.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s.id; // es: "S_..."
+      opt.textContent = `Speciale: ${s.label}`;
+      insGiro.appendChild(opt);
+    });
+  }
+
+  function getAllGiriForDay(day) {
+    const list = [];
+    DEFAULT_GIRI.forEach(g => list.push({ id: g, label: `Giro ${g}`, isSpecial: false }));
+    const specials = Array.isArray(day.specialGiri) ? day.specialGiri : [];
+    specials.forEach(s => list.push({ id: s.id, label: s.label, isSpecial: true }));
+    return list;
+  }
+
   // ===== MATERIALI GIORNATA =====
   function onSaveMaterialiGiornata() {
     const dateISO = giorData.value || toISODate(new Date());
     const day = getOrCreateDay(dateISO);
 
-    const m1 = normalizeMaterial(giorMat1.value);
-    const m2 = normalizeMaterial(giorMat2.value);
+    const m1 = normalizeText(giorMat1.value);
+    const m2 = normalizeText(giorMat2.value);
 
     if (!m1) return setGiorStatus("Materiale 1 è obbligatorio (puoi anche scriverlo a mano).");
 
@@ -201,16 +241,12 @@
   }
 
   function updateMaterialHint() {
-    const m1 = normalizeMaterial(giorMat1.value);
-    const m2 = normalizeMaterial(giorMat2.value);
+    const m1 = normalizeText(giorMat1.value);
+    const m2 = normalizeText(giorMat2.value);
     giorMatHint.textContent = `Materiale 1: ${m1 || "(vuoto)"} • Materiale 2: ${m2 || "(nessuno)"}`;
   }
 
-  function normalizeMaterial(s) {
-    return (s || "").trim().replace(/\s+/g, " ");
-  }
-
-  // ===== MATERIALI IN INSERISCI (Op1/Op2 scelgono tra Materiale1/2 della data) =====
+  // ===== MATERIALI IN INSERISCI =====
   function refreshInsertMaterialOptions() {
     const dateISO = insData.value || toISODate(new Date());
     const day = getOrCreateDay(dateISO);
@@ -226,9 +262,12 @@
     rebuildSelect(insMatOp1, opts);
     rebuildSelect(insMatOp2, opts);
 
+    // QUI la modifica che volevi:
+    // Op1 di default -> M1 (se esiste)
+    // Op2 di default -> VUOTO (sempre), così lo scegli tu solo se serve
     if (!editContext) {
       insMatOp1.value = m1 ? "M1" : "";
-      insMatOp2.value = m2 ? "M2" : (m1 ? "M1" : "");
+      insMatOp2.value = "";
     }
   }
 
@@ -254,10 +293,10 @@
   // ===== SAVE GIRO =====
   function onSaveGiro() {
     const dateISO = insData.value || toISODate(new Date());
-    const giro = insGiro.value;
+    const giroId = insGiro.value;
 
-    const op1 = normalizeName(insOp1.value);
-    const op2 = normalizeName(insOp2.value);
+    const op1 = normalizeText(insOp1.value);
+    const op2 = normalizeText(insOp2.value);
     const t1 = normalizeTarga(insT1.value);
     const t2 = normalizeTarga(insT2.value);
     const note = (insNoteGiro.value || "").trim();
@@ -266,14 +305,14 @@
     const matRefOp2 = insMatOp2.value || "";
 
     if (!dateISO) return setInsStatus("Errore: data non valida.");
-    if (!giro) return setInsStatus("Errore: seleziona un giro.");
+    if (!giroId) return setInsStatus("Errore: seleziona un giro.");
 
     const hasSomething = !!op1 || !!op2 || !!t1 || !!t2 || !!note || !!matRefOp1 || !!matRefOp2;
     if (!hasSomething) return setInsStatus("Niente da salvare: inserisci almeno un dato.");
 
     const day = getOrCreateDay(dateISO);
     day.giri = day.giri || {};
-    day.giri[giro] = {
+    day.giri[giroId] = {
       op1, op2, t1, t2, note,
       matRefOp1, matRefOp2,
       updatedAt: Date.now()
@@ -290,21 +329,8 @@
     clearInsertForm(true);
 
     if (giorData.value === dateISO) loadGiornata();
+
     endEditMode();
-  }
-
-  function pushOperatoreIfNeeded(name) {
-    const n = (name || "").trim();
-    if (!n) return;
-    const exists = db.operatori.some(x => x.toLowerCase() === n.toLowerCase());
-    if (!exists) db.operatori.push(n);
-  }
-
-  function pushMaterialIfNeeded(mat) {
-    const m = (mat || "").trim();
-    if (!m) return;
-    const exists = db.materiali.some(x => x.toLowerCase() === m.toLowerCase());
-    if (!exists) db.materiali.push(m);
   }
 
   // ===== GIORNATA LOAD + TABLE =====
@@ -314,44 +340,61 @@
 
     const day = getOrCreateDay(dateISO);
 
+    // header fields
     giorCapo.value = day.caposquadra || "";
     giorNote.value = day.noteGiornata || "";
-
-    // materiali
     giorMat1.value = day.material1 || "";
     giorMat2.value = day.material2 || "";
     updateMaterialHint();
 
+    // weekday
     giorWeekday.textContent = formatWeekdayItalian(dateISO);
+
+    // render table (standard + special)
     renderTable(dateISO, day);
+
+    // update insert tab giro list for same date (se l’utente sta su Inserisci e cambia giorno)
+    if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
+
+    // apply search if typed
+    applySearchFilter();
 
     setGiorStatus("Caricato.");
   }
 
   function renderTable(dateISO, day) {
     const giriData = (day && day.giri) ? day.giri : {};
+    const allGiri = getAllGiriForDay(day);
+
     tblBody.innerHTML = "";
+    lastRenderedRows = [];
 
-    DEFAULT_GIRI.forEach(giro => {
-      const entry = giriData[giro];
+    allGiri.forEach(g => {
+      const entry = giriData[g.id];
+
       const row = document.createElement("tr");
+      row.dataset.search = buildRowSearchBlob(g, entry);
 
+      // Giro
       const tdGiro = document.createElement("td");
-      tdGiro.textContent = giro;
+      tdGiro.textContent = g.isSpecial ? g.label : g.label; // "Giro X" già pronto
       row.appendChild(tdGiro);
 
+      // Operatori
       const tdOps = document.createElement("td");
       tdOps.innerHTML = (entry && (entry.op1 || entry.op2))
         ? escapeHtml([entry.op1, entry.op2].filter(Boolean).join(" • "))
         : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdOps);
 
+      // Targhe
       const tdT = document.createElement("td");
       tdT.innerHTML = (entry && (entry.t1 || entry.t2))
         ? escapeHtml([entry.t1, entry.t2].filter(Boolean).join(" • "))
         : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdT);
 
+      // Materiali
       const tdM = document.createElement("td");
       if (entry && (entry.matRefOp1 || entry.matRefOp2)) {
         const op1Name = entry.op1 || "Op1";
@@ -369,39 +412,81 @@
       }
       row.appendChild(tdM);
 
+      // Note
       const tdN = document.createElement("td");
       tdN.innerHTML = (entry && entry.note)
         ? escapeHtml(entry.note)
         : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdN);
 
+      // Azioni
       const tdA = document.createElement("td");
       tdA.className = "actionsCell";
 
       const btnMod = document.createElement("button");
       btnMod.className = "smallBtn primary";
       btnMod.textContent = "Modifica";
-      btnMod.addEventListener("click", () => startEditFromGiornata(dateISO, giro));
+      btnMod.addEventListener("click", () => startEditFromGiornata(dateISO, g.id));
       tdA.appendChild(btnMod);
 
       const btnDel = document.createElement("button");
       btnDel.className = "smallBtn danger";
       btnDel.textContent = "Elimina";
       if (!entry) btnDel.classList.add("disabled");
-      else btnDel.addEventListener("click", () => deleteEntry(dateISO, giro));
+      else btnDel.addEventListener("click", () => deleteEntry(dateISO, g.id));
       tdA.appendChild(btnDel);
 
+      // Se giro speciale: tasto rimuovi giro speciale (non elimina dati per forza: li elimina insieme)
+      if (g.isSpecial) {
+        const btnRm = document.createElement("button");
+        btnRm.className = "smallBtn danger";
+        btnRm.textContent = "Rimuovi giro";
+        btnRm.addEventListener("click", () => removeSpecialGiro(dateISO, g.id));
+        tdA.appendChild(btnRm);
+      }
+
       row.appendChild(tdA);
+
       tblBody.appendChild(row);
+      lastRenderedRows.push(row);
     });
   }
 
-  function startEditFromGiornata(dateISO, giro) {
+  function buildRowSearchBlob(g, entry) {
+    const parts = [];
+    parts.push(g.label);
+    if (entry) {
+      parts.push(entry.op1 || "");
+      parts.push(entry.op2 || "");
+      parts.push(entry.t1 || "");
+      parts.push(entry.t2 || "");
+      parts.push(entry.note || "");
+    }
+    return parts.join(" ").toLowerCase();
+  }
+
+  function applySearchFilter() {
+    const q = (giorCerca.value || "").trim().toLowerCase();
+    if (!lastRenderedRows.length) return;
+
+    if (!q) {
+      lastRenderedRows.forEach(r => r.style.display = "");
+      return;
+    }
+
+    lastRenderedRows.forEach(r => {
+      const blob = r.dataset.search || "";
+      r.style.display = blob.includes(q) ? "" : "none";
+    });
+  }
+
+  function startEditFromGiornata(dateISO, giroId) {
     const day = getOrCreateDay(dateISO);
-    const entry = (day.giri && day.giri[giro]) ? day.giri[giro] : null;
+    const entry = (day.giri && day.giri[giroId]) ? day.giri[giroId] : null;
 
     insData.value = dateISO;
-    insGiro.value = giro;
+    rebuildGiroSelectForInsert(); // così include special del giorno
+    insGiro.value = giroId;
 
     refreshInsertMaterialOptions();
 
@@ -411,35 +496,88 @@
     insT2.value = entry?.t2 || "";
     insNoteGiro.value = entry?.note || "";
 
-    insMatOp1.value = entry?.matRefOp1 || (day.material1 ? "M1" : "");
-    insMatOp2.value = entry?.matRefOp2 || (day.material2 ? "M2" : (day.material1 ? "M1" : ""));
+    insMatOp1.value = entry?.matRefOp1 || ((day.material1 || "").trim() ? "M1" : "");
+    // Op2 NON auto: se non c’è valore salvato, resta vuoto
+    insMatOp2.value = entry?.matRefOp2 || "";
 
-    editContext = { dateISO, giro };
+    editContext = { dateISO, giroId };
     btnAnnullaModifica.classList.remove("hidden");
-    setInsStatus(`Modifica: ${formatDateIT(dateISO)} • Giro ${giro}`);
+    setInsStatus(`Modifica: ${formatDateIT(dateISO)} • ${labelForGiro(day, giroId)}`);
 
     updateWeekdayHints();
     openTab("tab-inserisci");
   }
 
-  function deleteEntry(dateISO, giro) {
-    const ok = confirm(`Eliminare i dati di Giro ${giro} per ${formatDateIT(dateISO)}?`);
+  function labelForGiro(day, giroId) {
+    if (DEFAULT_GIRI.includes(giroId)) return `Giro ${giroId}`;
+    const specials = Array.isArray(day.specialGiri) ? day.specialGiri : [];
+    const s = specials.find(x => x.id === giroId);
+    return s ? `Speciale: ${s.label}` : giroId;
+  }
+
+  function deleteEntry(dateISO, giroId) {
+    const ok = confirm(`Eliminare i dati per ${formatDateIT(dateISO)} • ${giroId}?`);
     if (!ok) return;
 
     const day = getOrCreateDay(dateISO);
-    if (day.giri && day.giri[giro]) {
-      delete day.giri[giro];
+    if (day.giri && day.giri[giroId]) {
+      delete day.giri[giroId];
       db.dates[dateISO] = day;
       saveDB();
       loadGiornata();
-      setGiorStatus(`Eliminato Giro ${giro}.`);
+      setGiorStatus("Eliminato.");
     }
+  }
+
+  // ===== GIRI SPECIALI =====
+  function onAggiungiGiroSpeciale() {
+    const dateISO = giorData.value || toISODate(new Date());
+    const label = normalizeText(giorGiroSpeciale.value);
+    if (!label) return setGiorStatus("Scrivi un nome per il giro speciale.");
+
+    const day = getOrCreateDay(dateISO);
+    day.specialGiri = Array.isArray(day.specialGiri) ? day.specialGiri : [];
+
+    const exists = day.specialGiri.some(x => (x.label || "").toLowerCase() === label.toLowerCase());
+    if (exists) return setGiorStatus("Esiste già un giro speciale con lo stesso nome.");
+
+    const id = `S_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    day.specialGiri.push({ id, label });
+
+    db.dates[dateISO] = day;
+    saveDB();
+
+    giorGiroSpeciale.value = "";
+    setGiorStatus("Giro speciale aggiunto.");
+
+    // refresh UI
+    loadGiornata();
+    // se in Inserisci stai lavorando su questa data, aggiorna select
+    if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
+  }
+
+  function removeSpecialGiro(dateISO, giroId) {
+    const ok = confirm("Rimuovere questo giro speciale dalla giornata? (Eliminerà anche i dati compilati per quel giro.)");
+    if (!ok) return;
+
+    const day = getOrCreateDay(dateISO);
+    day.specialGiri = Array.isArray(day.specialGiri) ? day.specialGiri : [];
+    day.specialGiri = day.specialGiri.filter(x => x.id !== giroId);
+
+    if (day.giri && day.giri[giroId]) delete day.giri[giroId];
+
+    db.dates[dateISO] = day;
+    saveDB();
+
+    setGiorStatus("Giro speciale rimosso.");
+    loadGiornata();
+    if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
   }
 
   // ===== CAPOSQUADRA / NOTE =====
   function onSaveCaposquadra() {
     const dateISO = giorData.value || toISODate(new Date());
-    const capo = normalizeName(giorCapo.value);
+    const capo = normalizeText(giorCapo.value);
 
     const day = getOrCreateDay(dateISO);
     day.caposquadra = capo;
@@ -464,14 +602,149 @@
     setGiorStatus("Note giornata salvate.");
   }
 
-  function pushCapoIfNeeded(name) {
-    const n = (name || "").trim();
-    if (!n) return;
-    const exists = db.caposquadraList.some(x => x.toLowerCase() === n.toLowerCase());
-    if (!exists) db.caposquadraList.push(n);
+  // ===== COPIA DA IERI =====
+  function onCopiaDaIeri() {
+    const dateISO = giorData.value || toISODate(new Date());
+    const yISO = addDaysISO(dateISO, -1);
+
+    const yDay = db.dates?.[yISO];
+    if (!yDay) return setGiorStatus(`Nessuna giornata trovata per ieri (${formatDateIT(yISO)}).`);
+
+    const day = getOrCreateDay(dateISO);
+
+    day.caposquadra = (yDay.caposquadra || "").trim();
+    day.material1 = (yDay.material1 || "").trim();
+    day.material2 = (yDay.material2 || "").trim();
+    day.noteGiornata = (yDay.noteGiornata || "").trim();
+
+    db.dates[dateISO] = day;
+    saveDB();
+
+    setGiorStatus(`Copiato da ieri (${formatDateIT(yISO)}).`);
+    loadGiornata();
   }
 
-  // ===== EDIT HELPERS =====
+  // ===== EXPORT PDF (print) =====
+  function onExportPdf() {
+    const dateISO = giorData.value || toISODate(new Date());
+    const day = getOrCreateDay(dateISO);
+
+    const html = buildPrintHtml(dateISO, day);
+
+    const w = window.open("", "_blank");
+    if (!w) {
+      alert("Popup bloccato. Riprova oppure abilita l’apertura di nuove finestre.");
+      return;
+    }
+
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+
+    // prova a lanciare stampa
+    setTimeout(() => {
+      try { w.focus(); w.print(); } catch {}
+    }, 350);
+  }
+
+  function buildPrintHtml(dateISO, day) {
+    const capo = escapeHtml((day.caposquadra || "").trim());
+    const m1 = escapeHtml((day.material1 || "").trim());
+    const m2 = escapeHtml((day.material2 || "").trim());
+    const noteG = escapeHtml((day.noteGiornata || "").trim());
+    const titleDate = `${escapeHtml(formatWeekdayItalian(dateISO))}`;
+
+    const rows = [];
+    const giriData = day.giri || {};
+    const allGiri = getAllGiriForDay(day);
+
+    allGiri.forEach(g => {
+      const entry = giriData[g.id] || {};
+      const ops = [entry.op1, entry.op2].filter(Boolean).join(" • ");
+      const t = [entry.t1, entry.t2].filter(Boolean).join(" • ");
+
+      const mOp1 = entry.matRefOp1 ? materialLabelForRef(dateISO, entry.matRefOp1) : "";
+      const mOp2 = entry.matRefOp2 ? materialLabelForRef(dateISO, entry.matRefOp2) : "";
+
+      const rip = [];
+      if (entry.matRefOp1) rip.push(`${entry.op1 || "Op1"} → ${mOp1 || ""}`);
+      if (entry.op2 && entry.matRefOp2) rip.push(`${entry.op2 || "Op2"} → ${mOp2 || ""}`);
+
+      rows.push(`
+        <tr>
+          <td>${escapeHtml(g.isSpecial ? g.label : g.label)}</td>
+          <td>${escapeHtml(ops || "—")}</td>
+          <td>${escapeHtml(t || "—")}</td>
+          <td>${escapeHtml(rip.join(" • ") || "—")}</td>
+          <td>${escapeHtml(entry.note || "—")}</td>
+        </tr>
+      `);
+    });
+
+    return `
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Giornaliera Giri - ${escapeHtml(formatDateIT(dateISO))}</title>
+  <style>
+    body{ font-family: Arial, sans-serif; padding:18px; color:#111; }
+    h1{ font-size:18px; margin:0 0 10px; }
+    .meta{ margin:0 0 12px; font-size:12px; }
+    .box{ border:1px solid #ddd; padding:10px; border-radius:10px; margin-bottom:12px; }
+    .k{ color:#555; font-weight:700; }
+    table{ width:100%; border-collapse:collapse; font-size:12px; }
+    th,td{ border:1px solid #ddd; padding:8px; vertical-align:top; }
+    th{ background:#f2f2f2; text-align:left; }
+    @media print{ body{ padding:0; } .box{ border:1px solid #bbb; } }
+  </style>
+</head>
+<body>
+  <h1>Giornaliera Giri</h1>
+  <p class="meta">${titleDate}</p>
+
+  <div class="box">
+    <div><span class="k">Caposquadra:</span> ${capo || "—"}</div>
+    <div><span class="k">Materiale 1:</span> ${m1 || "—"} &nbsp;&nbsp; <span class="k">Materiale 2:</span> ${m2 || "—"}</div>
+    <div><span class="k">Note giornata:</span> ${noteG || "—"}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Giro</th>
+        <th>Operatori</th>
+        <th>Furgoni</th>
+        <th>Ripartizione materiali</th>
+        <th>Note giro</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.join("")}
+    </tbody>
+  </table>
+</body>
+</html>
+    `;
+  }
+
+  // ===== HELPERS =====
+  function clearInsertForm(keepDateGiro) {
+    if (!keepDateGiro) {
+      insData.value = toISODate(new Date());
+      rebuildGiroSelectForInsert();
+      insGiro.value = DEFAULT_GIRI[0];
+    }
+    insOp1.value = "";
+    insOp2.value = "";
+    insT1.value = "";
+    insT2.value = "";
+    insNoteGiro.value = "";
+    refreshInsertMaterialOptions();
+    updateWeekdayHints();
+  }
+
   function endEditMode() {
     editContext = null;
     btnAnnullaModifica.classList.add("hidden");
@@ -484,21 +757,6 @@
     setInsStatus(msg);
   }
 
-  function clearInsertForm(keepDateGiro) {
-    if (!keepDateGiro) {
-      insData.value = toISODate(new Date());
-      insGiro.value = DEFAULT_GIRI[0];
-    }
-    insOp1.value = "";
-    insOp2.value = "";
-    insT1.value = "";
-    insT2.value = "";
-    insNoteGiro.value = "";
-    refreshInsertMaterialOptions();
-    updateWeekdayHints();
-  }
-
-  // ===== DATE / FORMAT =====
   function updateWeekdayHints() {
     const d1 = insData.value;
     insWeekdayHint.textContent = d1 ? formatWeekdayItalian(d1) : "";
@@ -537,12 +795,40 @@
     return `${y}-${m}-${d}`;
   }
 
-  function normalizeName(s) {
+  function addDaysISO(dateISO, deltaDays) {
+    const d = parseISODate(dateISO);
+    if (!d) return dateISO;
+    d.setDate(d.getDate() + deltaDays);
+    return toISODate(d);
+  }
+
+  function normalizeText(s) {
     return (s || "").trim().replace(/\s+/g, " ");
   }
 
   function normalizeTarga(s) {
     return (s || "").trim().toUpperCase().replace(/\s+/g, "");
+  }
+
+  function pushOperatoreIfNeeded(name) {
+    const n = (name || "").trim();
+    if (!n) return;
+    const exists = db.operatori.some(x => x.toLowerCase() === n.toLowerCase());
+    if (!exists) db.operatori.push(n);
+  }
+
+  function pushMaterialIfNeeded(mat) {
+    const m = (mat || "").trim();
+    if (!m) return;
+    const exists = db.materiali.some(x => x.toLowerCase() === m.toLowerCase());
+    if (!exists) db.materiali.push(m);
+  }
+
+  function pushCapoIfNeeded(name) {
+    const n = (name || "").trim();
+    if (!n) return;
+    const exists = db.caposquadraList.some(x => x.toLowerCase() === n.toLowerCase());
+    if (!exists) db.caposquadraList.push(n);
   }
 
   // ===== DB =====
@@ -570,6 +856,7 @@
       existing.noteGiornata = existing.noteGiornata || "";
       existing.material1 = existing.material1 || "";
       existing.material2 = existing.material2 || "";
+      existing.specialGiri = Array.isArray(existing.specialGiri) ? existing.specialGiri : [];
       return existing;
     }
     return {
@@ -577,6 +864,7 @@
       noteGiornata: "",
       material1: "",
       material2: "",
+      specialGiri: [],
       giri: {}
     };
   }
