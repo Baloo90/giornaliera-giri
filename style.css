@@ -1,4 +1,4 @@
-/* style.css */
+/* style.css (uguale a prima) */
 :root{
   --bg:#0b0f14;
   --text:#e7eefc;
@@ -166,15 +166,4 @@ table.grid{
   backdrop-filter: blur(8px);
   font-size:12px;
   color: var(--muted);
-}
-
-/* ====== STAMPA (PDF) ====== */
-@media print{
-  body{ background:#fff; color:#000; }
-  .appHeader,.tabs,.appFooter,.btn,.hint,.status,.divider{ display:none !important; }
-  .card{ box-shadow:none; border:1px solid #ddd; }
-  table.grid{ min-width: auto; }
-  .tableWrap{ border:none; }
-  .grid thead th{ background:#f2f2f2 !important; color:#000; position:static; }
-  .grid tbody td{ color:#000; }
 }
