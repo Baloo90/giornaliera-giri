@@ -2,7 +2,7 @@
 (() => {
   "use strict";
 
-  const APP_KEY = "giornaliera_giri_v4";
+  const APP_KEY = "giornaliera_giri_v5_pdf";
 
   const DEFAULT_GIRI = Array.from({ length: 19 }, (_, i) => (i + 1).toString());
   const PRESET_MATERIALI = ["Plastica", "Vetro", "Carta", "Organico", "Secco"];
@@ -71,13 +71,13 @@
   // ===== STATE =====
   let db = loadDB();
   let editContext = null; // { dateISO, giroId }
-  let lastRenderedRows = []; // for search filtering
+  let lastRenderedRows = [];
 
   init();
 
   function init() {
     footerInfo.textContent =
-      "Nota: con WebIntoApp (URL remoto) serve internet per aprire l’app. I dati però restano salvati localmente.";
+      "PDF: ora viene generato un file vero (jsPDF). Se WebIntoApp blocca il download, il PDF si apre e lo salvi/condividi da lì.";
 
     ensureDefaults();
     refreshDatalists();
@@ -129,7 +129,6 @@
 
     giorCerca.addEventListener("input", applySearchFilter);
 
-    // First load
     loadGiornata();
     rebuildGiroSelectForInsert();
     refreshInsertMaterialOptions();
@@ -149,7 +148,6 @@
     db.dates = db.dates && typeof db.dates === "object" ? db.dates : {};
 
     if (db.caposquadraList.length === 0) db.caposquadraList = [...DEFAULT_CAPOSQUADRA];
-
     PRESET_MATERIALI.forEach(m => pushMaterialIfNeeded(m));
 
     saveDB();
@@ -180,26 +178,23 @@
     });
   }
 
-  // ===== GIRI LIST (standard + special per-date) =====
+  // ===== GIRI LIST =====
   function rebuildGiroSelectForInsert() {
     const dateISO = insData.value || toISODate(new Date());
     const day = getOrCreateDay(dateISO);
 
     insGiro.innerHTML = "";
-
-    // standard 1..19
     DEFAULT_GIRI.forEach(g => {
       const opt = document.createElement("option");
-      opt.value = g; // giroId standard = "1".."19"
+      opt.value = g;
       opt.textContent = `Giro ${g}`;
       insGiro.appendChild(opt);
     });
 
-    // special
     const specials = Array.isArray(day.specialGiri) ? day.specialGiri : [];
     specials.forEach(s => {
       const opt = document.createElement("option");
-      opt.value = s.id; // es: "S_..."
+      opt.value = s.id;
       opt.textContent = `Speciale: ${s.label}`;
       insGiro.appendChild(opt);
     });
@@ -221,10 +216,10 @@
     const m1 = normalizeText(giorMat1.value);
     const m2 = normalizeText(giorMat2.value);
 
-    if (!m1) return setGiorStatus("Materiale 1 è obbligatorio (puoi anche scriverlo a mano).");
+    if (!m1) return setGiorStatus("Materiale 1 è obbligatorio.");
 
     day.material1 = m1;
-    day.material2 = m2; // può essere vuoto
+    day.material2 = m2;
 
     pushMaterialIfNeeded(m1);
     if (m2) pushMaterialIfNeeded(m2);
@@ -262,12 +257,9 @@
     rebuildSelect(insMatOp1, opts);
     rebuildSelect(insMatOp2, opts);
 
-    // QUI la modifica che volevi:
-    // Op1 di default -> M1 (se esiste)
-    // Op2 di default -> VUOTO (sempre), così lo scegli tu solo se serve
     if (!editContext) {
       insMatOp1.value = m1 ? "M1" : "";
-      insMatOp2.value = "";
+      insMatOp2.value = ""; // NON automatico
     }
   }
 
@@ -312,11 +304,7 @@
 
     const day = getOrCreateDay(dateISO);
     day.giri = day.giri || {};
-    day.giri[giroId] = {
-      op1, op2, t1, t2, note,
-      matRefOp1, matRefOp2,
-      updatedAt: Date.now()
-    };
+    day.giri[giroId] = { op1, op2, t1, t2, note, matRefOp1, matRefOp2, updatedAt: Date.now() };
 
     pushOperatoreIfNeeded(op1);
     pushOperatoreIfNeeded(op2);
@@ -329,7 +317,6 @@
     clearInsertForm(true);
 
     if (giorData.value === dateISO) loadGiornata();
-
     endEditMode();
   }
 
@@ -340,23 +327,16 @@
 
     const day = getOrCreateDay(dateISO);
 
-    // header fields
     giorCapo.value = day.caposquadra || "";
     giorNote.value = day.noteGiornata || "";
     giorMat1.value = day.material1 || "";
     giorMat2.value = day.material2 || "";
     updateMaterialHint();
 
-    // weekday
     giorWeekday.textContent = formatWeekdayItalian(dateISO);
-
-    // render table (standard + special)
     renderTable(dateISO, day);
 
-    // update insert tab giro list for same date (se l’utente sta su Inserisci e cambia giorno)
     if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
-
-    // apply search if typed
     applySearchFilter();
 
     setGiorStatus("Caricato.");
@@ -375,26 +355,22 @@
       const row = document.createElement("tr");
       row.dataset.search = buildRowSearchBlob(g, entry);
 
-      // Giro
       const tdGiro = document.createElement("td");
-      tdGiro.textContent = g.isSpecial ? g.label : g.label; // "Giro X" già pronto
+      tdGiro.textContent = g.label;
       row.appendChild(tdGiro);
 
-      // Operatori
       const tdOps = document.createElement("td");
       tdOps.innerHTML = (entry && (entry.op1 || entry.op2))
         ? escapeHtml([entry.op1, entry.op2].filter(Boolean).join(" • "))
         : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdOps);
 
-      // Targhe
       const tdT = document.createElement("td");
       tdT.innerHTML = (entry && (entry.t1 || entry.t2))
         ? escapeHtml([entry.t1, entry.t2].filter(Boolean).join(" • "))
         : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdT);
 
-      // Materiali
       const tdM = document.createElement("td");
       if (entry && (entry.matRefOp1 || entry.matRefOp2)) {
         const op1Name = entry.op1 || "Op1";
@@ -412,14 +388,12 @@
       }
       row.appendChild(tdM);
 
-      // Note
       const tdN = document.createElement("td");
       tdN.innerHTML = (entry && entry.note)
         ? escapeHtml(entry.note)
         : `<span class="badgeEmpty">—</span>`;
       row.appendChild(tdN);
 
-      // Azioni
       const tdA = document.createElement("td");
       tdA.className = "actionsCell";
 
@@ -436,7 +410,6 @@
       else btnDel.addEventListener("click", () => deleteEntry(dateISO, g.id));
       tdA.appendChild(btnDel);
 
-      // Se giro speciale: tasto rimuovi giro speciale (non elimina dati per forza: li elimina insieme)
       if (g.isSpecial) {
         const btnRm = document.createElement("button");
         btnRm.className = "smallBtn danger";
@@ -446,7 +419,6 @@
       }
 
       row.appendChild(tdA);
-
       tblBody.appendChild(row);
       lastRenderedRows.push(row);
     });
@@ -485,7 +457,7 @@
     const entry = (day.giri && day.giri[giroId]) ? day.giri[giroId] : null;
 
     insData.value = dateISO;
-    rebuildGiroSelectForInsert(); // così include special del giorno
+    rebuildGiroSelectForInsert();
     insGiro.value = giroId;
 
     refreshInsertMaterialOptions();
@@ -497,7 +469,6 @@
     insNoteGiro.value = entry?.note || "";
 
     insMatOp1.value = entry?.matRefOp1 || ((day.material1 || "").trim() ? "M1" : "");
-    // Op2 NON auto: se non c’è valore salvato, resta vuoto
     insMatOp2.value = entry?.matRefOp2 || "";
 
     editContext = { dateISO, giroId };
@@ -550,9 +521,7 @@
     giorGiroSpeciale.value = "";
     setGiorStatus("Giro speciale aggiunto.");
 
-    // refresh UI
     loadGiornata();
-    // se in Inserisci stai lavorando su questa data, aggiorna select
     if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
   }
 
@@ -563,7 +532,6 @@
     const day = getOrCreateDay(dateISO);
     day.specialGiri = Array.isArray(day.specialGiri) ? day.specialGiri : [];
     day.specialGiri = day.specialGiri.filter(x => x.id !== giroId);
-
     if (day.giri && day.giri[giroId]) delete day.giri[giroId];
 
     db.dates[dateISO] = day;
@@ -624,109 +592,96 @@
     loadGiornata();
   }
 
-  // ===== EXPORT PDF (print) =====
+  // ===== EXPORT PDF (vero) =====
   function onExportPdf() {
-    const dateISO = giorData.value || toISODate(new Date());
-    const day = getOrCreateDay(dateISO);
-
-    const html = buildPrintHtml(dateISO, day);
-
-    const w = window.open("", "_blank");
-    if (!w) {
-      alert("Popup bloccato. Riprova oppure abilita l’apertura di nuove finestre.");
+    // Verifica librerie
+    const jsPDF = window.jspdf?.jsPDF;
+    if (!jsPDF || typeof jsPDF !== "function") {
+      setGiorStatus("PDF: libreria non caricata. Controlla la connessione (serve internet per jsPDF).");
+      return;
+    }
+    if (typeof jsPDF.API?.autoTable !== "function") {
+      setGiorStatus("PDF: autoTable non disponibile (script non caricato).");
       return;
     }
 
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    const dateISO = giorData.value || toISODate(new Date());
+    const day = getOrCreateDay(dateISO);
 
-    // prova a lanciare stampa
-    setTimeout(() => {
-      try { w.focus(); w.print(); } catch {}
-    }, 350);
-  }
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
 
-  function buildPrintHtml(dateISO, day) {
-    const capo = escapeHtml((day.caposquadra || "").trim());
-    const m1 = escapeHtml((day.material1 || "").trim());
-    const m2 = escapeHtml((day.material2 || "").trim());
-    const noteG = escapeHtml((day.noteGiornata || "").trim());
-    const titleDate = `${escapeHtml(formatWeekdayItalian(dateISO))}`;
+    const titolo = "Giornaliera Giri";
+    const sottotitolo = formatWeekdayItalian(dateISO);
 
-    const rows = [];
+    const capo = (day.caposquadra || "").trim() || "—";
+    const m1 = (day.material1 || "").trim() || "—";
+    const m2 = (day.material2 || "").trim() || "—";
+    const noteG = (day.noteGiornata || "").trim() || "—";
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(titolo, 40, 40);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(sottotitolo, 40, 62);
+
+    doc.setFontSize(10);
+    doc.text(`Caposquadra: ${capo}     Materiale 1: ${m1}     Materiale 2: ${m2}`, 40, 84);
+    doc.text(`Note giornata: ${noteG}`, 40, 104);
+
     const giriData = day.giri || {};
     const allGiri = getAllGiriForDay(day);
 
-    allGiri.forEach(g => {
-      const entry = giriData[g.id] || {};
-      const ops = [entry.op1, entry.op2].filter(Boolean).join(" • ");
-      const t = [entry.t1, entry.t2].filter(Boolean).join(" • ");
-
-      const mOp1 = entry.matRefOp1 ? materialLabelForRef(dateISO, entry.matRefOp1) : "";
-      const mOp2 = entry.matRefOp2 ? materialLabelForRef(dateISO, entry.matRefOp2) : "";
+    const head = [[ "Giro", "Operatori", "Furgoni", "Ripartizione materiali", "Note giro" ]];
+    const body = allGiri.map(g => {
+      const e = giriData[g.id] || {};
+      const ops = [e.op1, e.op2].filter(Boolean).join(" • ") || "—";
+      const t = [e.t1, e.t2].filter(Boolean).join(" • ") || "—";
 
       const rip = [];
-      if (entry.matRefOp1) rip.push(`${entry.op1 || "Op1"} → ${mOp1 || ""}`);
-      if (entry.op2 && entry.matRefOp2) rip.push(`${entry.op2 || "Op2"} → ${mOp2 || ""}`);
+      if (e.matRefOp1) rip.push(`${e.op1 || "Op1"} → ${materialLabelForRef(dateISO, e.matRefOp1) || ""}`);
+      if (e.op2 && e.matRefOp2) rip.push(`${e.op2 || "Op2"} → ${materialLabelForRef(dateISO, e.matRefOp2) || ""}`);
 
-      rows.push(`
-        <tr>
-          <td>${escapeHtml(g.isSpecial ? g.label : g.label)}</td>
-          <td>${escapeHtml(ops || "—")}</td>
-          <td>${escapeHtml(t || "—")}</td>
-          <td>${escapeHtml(rip.join(" • ") || "—")}</td>
-          <td>${escapeHtml(entry.note || "—")}</td>
-        </tr>
-      `);
+      return [
+        g.label,
+        ops,
+        t,
+        rip.join(" • ") || "—",
+        (e.note || "").trim() || "—"
+      ];
     });
 
-    return `
-<!doctype html>
-<html lang="it">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Giornaliera Giri - ${escapeHtml(formatDateIT(dateISO))}</title>
-  <style>
-    body{ font-family: Arial, sans-serif; padding:18px; color:#111; }
-    h1{ font-size:18px; margin:0 0 10px; }
-    .meta{ margin:0 0 12px; font-size:12px; }
-    .box{ border:1px solid #ddd; padding:10px; border-radius:10px; margin-bottom:12px; }
-    .k{ color:#555; font-weight:700; }
-    table{ width:100%; border-collapse:collapse; font-size:12px; }
-    th,td{ border:1px solid #ddd; padding:8px; vertical-align:top; }
-    th{ background:#f2f2f2; text-align:left; }
-    @media print{ body{ padding:0; } .box{ border:1px solid #bbb; } }
-  </style>
-</head>
-<body>
-  <h1>Giornaliera Giri</h1>
-  <p class="meta">${titleDate}</p>
+    doc.autoTable({
+      head,
+      body,
+      startY: 130,
+      styles: { font: "helvetica", fontSize: 9, cellPadding: 4, overflow: "linebreak" },
+      headStyles: { fillColor: [240,240,240], textColor: [0,0,0] },
+      margin: { left: 40, right: 40 }
+    });
 
-  <div class="box">
-    <div><span class="k">Caposquadra:</span> ${capo || "—"}</div>
-    <div><span class="k">Materiale 1:</span> ${m1 || "—"} &nbsp;&nbsp; <span class="k">Materiale 2:</span> ${m2 || "—"}</div>
-    <div><span class="k">Note giornata:</span> ${noteG || "—"}</div>
-  </div>
+    const fileName = `GiornalieraGiri_${dateISO}.pdf`;
 
-  <table>
-    <thead>
-      <tr>
-        <th>Giro</th>
-        <th>Operatori</th>
-        <th>Furgoni</th>
-        <th>Ripartizione materiali</th>
-        <th>Note giro</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rows.join("")}
-    </tbody>
-  </table>
-</body>
-</html>
-    `;
+    // Tentativo 1: download diretto
+    try {
+      doc.save(fileName);
+      setGiorStatus("PDF generato.");
+      return;
+    } catch {
+      // continua
+    }
+
+    // Tentativo 2: apri in nuova scheda come Blob (così lo salvi/condividi)
+    try {
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setGiorStatus("PDF aperto. Se non parte il download, salvalo/condividilo dalla schermata PDF.");
+      return;
+    } catch {
+      setGiorStatus("Impossibile generare il PDF su questa WebView.");
+    }
   }
 
   // ===== HELPERS =====
@@ -829,6 +784,34 @@
     if (!n) return;
     const exists = db.caposquadraList.some(x => x.toLowerCase() === n.toLowerCase());
     if (!exists) db.caposquadraList.push(n);
+  }
+
+  function applySearchFilter() {
+    const q = (giorCerca.value || "").trim().toLowerCase();
+    if (!lastRenderedRows.length) return;
+
+    if (!q) {
+      lastRenderedRows.forEach(r => r.style.display = "");
+      return;
+    }
+
+    lastRenderedRows.forEach(r => {
+      const blob = r.dataset.search || "";
+      r.style.display = blob.includes(q) ? "" : "none";
+    });
+  }
+
+  function buildRowSearchBlob(g, entry) {
+    const parts = [];
+    parts.push(g.label);
+    if (entry) {
+      parts.push(entry.op1 || "");
+      parts.push(entry.op2 || "");
+      parts.push(entry.t1 || "");
+      parts.push(entry.t2 || "");
+      parts.push(entry.note || "");
+    }
+    return parts.join(" ").toLowerCase();
   }
 
   // ===== DB =====
