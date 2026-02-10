@@ -1,8 +1,7 @@
-// script.js
 (() => {
   "use strict";
 
-  const APP_KEY = "giornaliera_giri_v5_pdf";
+  const APP_KEY = "giornaliera_giri_v6_pdf_backup";
 
   const DEFAULT_GIRI = Array.from({ length: 19 }, (_, i) => (i + 1).toString());
   const PRESET_MATERIALI = ["Plastica", "Vetro", "Carta", "Organico", "Secco"];
@@ -48,6 +47,10 @@
   const btnCopiaIeri = document.getElementById("btnCopiaIeri");
   const btnPdf = document.getElementById("btnPdf");
 
+  const btnBackup = document.getElementById("btnBackup");
+  const btnImport = document.getElementById("btnImport");
+  const fileImport = document.getElementById("fileImport");
+
   const giorCapo = document.getElementById("giorCapo");
   const btnSalvaCapo = document.getElementById("btnSalvaCapo");
 
@@ -65,7 +68,6 @@
   const dlCaposquadra = document.getElementById("dlCaposquadra");
   const dlMateriali = document.getElementById("dlMateriali");
   const giorStatus = document.getElementById("giorStatus");
-
   const footerInfo = document.getElementById("footerInfo");
 
   // ===== STATE =====
@@ -77,7 +79,7 @@
 
   function init() {
     footerInfo.textContent =
-      "PDF: ora viene generato un file vero (jsPDF). Se WebIntoApp blocca il download, il PDF si apre e lo salvi/condividi da lì.";
+      "Nota: in WebIntoApp la cache può cancellare i dati. Usa Backup (JSON) ogni tanto.";
 
     ensureDefaults();
     refreshDatalists();
@@ -120,6 +122,10 @@
     btnCopiaIeri.addEventListener("click", onCopiaDaIeri);
     btnPdf.addEventListener("click", onExportPdf);
 
+    btnBackup.addEventListener("click", onBackup);
+    btnImport.addEventListener("click", () => fileImport.click());
+    fileImport.addEventListener("change", onImportFile);
+
     btnAggiungiGiroSpeciale.addEventListener("click", onAggiungiGiroSpeciale);
 
     [giorMat1, giorMat2].forEach(el => {
@@ -138,6 +144,53 @@
     tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
     panels.forEach(p => p.classList.toggle("active", p.id === tabId));
     if (tabId === "tab-giornata") loadGiornata();
+  }
+
+  // ===== BACKUP / IMPORT =====
+  function onBackup() {
+    const stamp = toISODate(new Date());
+    const fileName = `Backup_GiornalieraGiri_${stamp}.json`;
+
+    const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setGiorStatus("Backup creato (JSON).");
+  }
+
+  async function onImportFile() {
+    const file = fileImport.files?.[0];
+    fileImport.value = "";
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      if (!parsed || typeof parsed !== "object") throw new Error("File non valido");
+      if (!parsed.dates || typeof parsed.dates !== "object") throw new Error("Manca 'dates'");
+
+      db = parsed;
+      ensureDefaults();
+      saveDB();
+
+      refreshDatalists();
+      refreshMaterialDatalist();
+      rebuildGiroSelectForInsert();
+      refreshInsertMaterialOptions();
+      loadGiornata();
+
+      setGiorStatus("Import completato.");
+    } catch {
+      setGiorStatus("Import fallito: JSON non valido o struttura sbagliata.");
+    }
   }
 
   // ===== DEFAULTS / DATALISTS =====
@@ -252,14 +305,14 @@
     const opts = [];
     if (m1) opts.push({ v: "M1", t: `Materiale 1: ${m1}` });
     if (m2) opts.push({ v: "M2", t: `Materiale 2: ${m2}` });
-    opts.push({ v: "", t: "— (non specificato) —" });
+    opts.push({ v: "", t: "- (non specificato) -" });
 
     rebuildSelect(insMatOp1, opts);
     rebuildSelect(insMatOp2, opts);
 
     if (!editContext) {
       insMatOp1.value = m1 ? "M1" : "";
-      insMatOp2.value = ""; // NON automatico
+      insMatOp2.value = "";
     }
   }
 
@@ -362,36 +415,36 @@
       const tdOps = document.createElement("td");
       tdOps.innerHTML = (entry && (entry.op1 || entry.op2))
         ? escapeHtml([entry.op1, entry.op2].filter(Boolean).join(" • "))
-        : `<span class="badgeEmpty">—</span>`;
+        : `<span class="badgeEmpty">-</span>`;
       row.appendChild(tdOps);
 
       const tdT = document.createElement("td");
       tdT.innerHTML = (entry && (entry.t1 || entry.t2))
         ? escapeHtml([entry.t1, entry.t2].filter(Boolean).join(" • "))
-        : `<span class="badgeEmpty">—</span>`;
+        : `<span class="badgeEmpty">-</span>`;
       row.appendChild(tdT);
 
       const tdM = document.createElement("td");
       if (entry && (entry.matRefOp1 || entry.matRefOp2)) {
         const op1Name = entry.op1 || "Op1";
         const op2Name = entry.op2 || "Op2";
-        const mOp1 = materialLabelForRef(dateISO, entry.matRefOp1) || "(?)";
-        const mOp2 = materialLabelForRef(dateISO, entry.matRefOp2) || "(?)";
+        const mOp1 = materialLabelForRef(dateISO, entry.matRefOp1) || "?";
+        const mOp2 = materialLabelForRef(dateISO, entry.matRefOp2) || "?";
 
         const parts = [];
-        if (entry.matRefOp1) parts.push(`${op1Name} → ${mOp1}`);
-        if (entry.op2 && entry.matRefOp2) parts.push(`${op2Name} → ${mOp2}`);
+        if (entry.matRefOp1) parts.push(`${op1Name} -> ${mOp1}`);
+        if (entry.op2 && entry.matRefOp2) parts.push(`${op2Name} -> ${mOp2}`);
 
-        tdM.textContent = parts.length ? parts.join(" • ") : "—";
+        tdM.textContent = parts.length ? parts.join(" • ") : "-";
       } else {
-        tdM.innerHTML = `<span class="badgeEmpty">—</span>`;
+        tdM.innerHTML = `<span class="badgeEmpty">-</span>`;
       }
       row.appendChild(tdM);
 
       const tdN = document.createElement("td");
       tdN.innerHTML = (entry && entry.note)
         ? escapeHtml(entry.note)
-        : `<span class="badgeEmpty">—</span>`;
+        : `<span class="badgeEmpty">-</span>`;
       row.appendChild(tdN);
 
       const tdA = document.createElement("td");
@@ -592,16 +645,15 @@
     loadGiornata();
   }
 
-  // ===== EXPORT PDF (vero) =====
+  // ===== EXPORT PDF (pulito ASCII) =====
   function onExportPdf() {
-    // Verifica librerie
     const jsPDF = window.jspdf?.jsPDF;
     if (!jsPDF || typeof jsPDF !== "function") {
-      setGiorStatus("PDF: libreria non caricata. Controlla la connessione (serve internet per jsPDF).");
+      setGiorStatus("PDF: libreria non caricata. Serve internet.");
       return;
     }
     if (typeof jsPDF.API?.autoTable !== "function") {
-      setGiorStatus("PDF: autoTable non disponibile (script non caricato).");
+      setGiorStatus("PDF: autoTable non disponibile.");
       return;
     }
 
@@ -610,13 +662,13 @@
 
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
 
-    const titolo = "Giornaliera Giri";
-    const sottotitolo = formatWeekdayItalian(dateISO);
+    const titolo = pdfSafe("Giornaliera Giri");
+    const sottotitolo = pdfSafe(formatWeekdayItalian(dateISO)); // qui toglie l’accento
 
-    const capo = (day.caposquadra || "").trim() || "—";
-    const m1 = (day.material1 || "").trim() || "—";
-    const m2 = (day.material2 || "").trim() || "—";
-    const noteG = (day.noteGiornata || "").trim() || "—";
+    const capo = pdfSafe((day.caposquadra || "").trim() || "-");
+    const m1 = pdfSafe((day.material1 || "").trim() || "-");
+    const m2 = pdfSafe((day.material2 || "").trim() || "-");
+    const noteG = pdfSafe((day.noteGiornata || "").trim() || "-");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
@@ -627,8 +679,8 @@
     doc.text(sottotitolo, 40, 62);
 
     doc.setFontSize(10);
-    doc.text(`Caposquadra: ${capo}     Materiale 1: ${m1}     Materiale 2: ${m2}`, 40, 84);
-    doc.text(`Note giornata: ${noteG}`, 40, 104);
+    doc.text(pdfSafe(`Caposquadra: ${capo}   Materiale 1: ${m1}   Materiale 2: ${m2}`), 40, 84);
+    doc.text(pdfSafe(`Note giornata: ${noteG}`), 40, 104);
 
     const giriData = day.giri || {};
     const allGiri = getAllGiriForDay(day);
@@ -636,19 +688,19 @@
     const head = [[ "Giro", "Operatori", "Furgoni", "Ripartizione materiali", "Note giro" ]];
     const body = allGiri.map(g => {
       const e = giriData[g.id] || {};
-      const ops = [e.op1, e.op2].filter(Boolean).join(" • ") || "—";
-      const t = [e.t1, e.t2].filter(Boolean).join(" • ") || "—";
+      const ops = pdfSafe([e.op1, e.op2].filter(Boolean).join(" • ") || "-");
+      const t = pdfSafe([e.t1, e.t2].filter(Boolean).join(" • ") || "-");
 
       const rip = [];
-      if (e.matRefOp1) rip.push(`${e.op1 || "Op1"} → ${materialLabelForRef(dateISO, e.matRefOp1) || ""}`);
-      if (e.op2 && e.matRefOp2) rip.push(`${e.op2 || "Op2"} → ${materialLabelForRef(dateISO, e.matRefOp2) || ""}`);
+      if (e.matRefOp1) rip.push(`${e.op1 || "Op1"} -> ${materialLabelForRef(dateISO, e.matRefOp1) || ""}`);
+      if (e.op2 && e.matRefOp2) rip.push(`${e.op2 || "Op2"} -> ${materialLabelForRef(dateISO, e.matRefOp2) || ""}`);
 
       return [
-        g.label,
+        pdfSafe(g.label),
         ops,
         t,
-        rip.join(" • ") || "—",
-        (e.note || "").trim() || "—"
+        pdfSafe(rip.join(" • ") || "-"),
+        pdfSafe((e.note || "").trim() || "-")
       ];
     });
 
@@ -661,27 +713,43 @@
       margin: { left: 40, right: 40 }
     });
 
+    // nome file senza spazi, estensione già pronta
     const fileName = `GiornalieraGiri_${dateISO}.pdf`;
 
-    // Tentativo 1: download diretto
+    // Prova download
     try {
       doc.save(fileName);
-      setGiorStatus("PDF generato.");
-      return;
+      setGiorStatus(`PDF generato: ${fileName}`);
     } catch {
-      // continua
+      // fallback: apri il PDF
+      try {
+        const blob = doc.output("blob");
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        setGiorStatus("PDF aperto: salvalo/condividilo dal viewer.");
+      } catch {
+        setGiorStatus("Impossibile generare il PDF su questa WebView.");
+      }
     }
+  }
 
-    // Tentativo 2: apri in nuova scheda come Blob (così lo salvi/condividi)
-    try {
-      const blob = doc.output("blob");
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setGiorStatus("PDF aperto. Se non parte il download, salvalo/condividilo dalla schermata PDF.");
-      return;
-    } catch {
-      setGiorStatus("Impossibile generare il PDF su questa WebView.");
-    }
+  // Converte testo “pericoloso” in ASCII (niente accenti/simboli)
+  function pdfSafe(s) {
+    const str = String(s ?? "");
+    const map = {
+      "à":"a","á":"a","â":"a","ä":"a","ã":"a","å":"a",
+      "è":"e","é":"e","ê":"e","ë":"e",
+      "ì":"i","í":"i","î":"i","ï":"i",
+      "ò":"o","ó":"o","ô":"o","ö":"o","õ":"o",
+      "ù":"u","ú":"u","û":"u","ü":"u",
+      "À":"A","È":"E","Ì":"I","Ò":"O","Ù":"U",
+      "—":"-","–":"-","→":"->","€":"EUR"
+    };
+    return str
+      .split("")
+      .map(ch => map[ch] ?? ch)
+      .join("")
+      .replace(/[^\x20-\x7E]/g, ""); // elimina qualunque altro carattere fuori ASCII
   }
 
   // ===== HELPERS =====
@@ -786,32 +854,16 @@
     if (!exists) db.caposquadraList.push(n);
   }
 
-  function applySearchFilter() {
-    const q = (giorCerca.value || "").trim().toLowerCase();
-    if (!lastRenderedRows.length) return;
-
-    if (!q) {
-      lastRenderedRows.forEach(r => r.style.display = "");
-      return;
-    }
-
-    lastRenderedRows.forEach(r => {
-      const blob = r.dataset.search || "";
-      r.style.display = blob.includes(q) ? "" : "none";
+  function rebuildSelect(sel, opts) {
+    const current = sel.value;
+    sel.innerHTML = "";
+    opts.forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.v;
+      opt.textContent = o.t;
+      sel.appendChild(opt);
     });
-  }
-
-  function buildRowSearchBlob(g, entry) {
-    const parts = [];
-    parts.push(g.label);
-    if (entry) {
-      parts.push(entry.op1 || "");
-      parts.push(entry.op2 || "");
-      parts.push(entry.t1 || "");
-      parts.push(entry.t2 || "");
-      parts.push(entry.note || "");
-    }
-    return parts.join(" ").toLowerCase();
+    sel.value = opts.some(o => o.v === current) ? current : opts[0].v;
   }
 
   // ===== DB =====
