@@ -1,7 +1,8 @@
+// script.js (sostituisci tutto con questo)
 (() => {
   "use strict";
 
-  const APP_KEY = "giornaliera_giri_v6_pdf_backup";
+  const APP_KEY = "giornaliera_giri_v7_pdf_nosave";
 
   const DEFAULT_GIRI = Array.from({ length: 19 }, (_, i) => (i + 1).toString());
   const PRESET_MATERIALI = ["Plastica", "Vetro", "Carta", "Organico", "Secco"];
@@ -74,12 +75,13 @@
   let db = loadDB();
   let editContext = null; // { dateISO, giroId }
   let lastRenderedRows = [];
+  let lastPdfUrl = null;
 
   init();
 
   function init() {
     footerInfo.textContent =
-      "Nota: in WebIntoApp la cache può cancellare i dati. Usa Backup (JSON) ogni tanto.";
+      "PDF: per evitare il Save as imposto dalla WebView, ora il PDF si apre direttamente (poi lo salvi/condividi dal viewer).";
 
     ensureDefaults();
     refreshDatalists();
@@ -120,7 +122,7 @@
     btnSalvaNoteGiornata.addEventListener("click", onSaveNoteGiornata);
 
     btnCopiaIeri.addEventListener("click", onCopiaDaIeri);
-    btnPdf.addEventListener("click", onExportPdf);
+    btnPdf.addEventListener("click", onExportPdfOpen);
 
     btnBackup.addEventListener("click", onBackup);
     btnImport.addEventListener("click", () => fileImport.click());
@@ -349,9 +351,6 @@
     const matRefOp1 = insMatOp1.value || "";
     const matRefOp2 = insMatOp2.value || "";
 
-    if (!dateISO) return setInsStatus("Errore: data non valida.");
-    if (!giroId) return setInsStatus("Errore: seleziona un giro.");
-
     const hasSomething = !!op1 || !!op2 || !!t1 || !!t2 || !!note || !!matRefOp1 || !!matRefOp2;
     if (!hasSomething) return setInsStatus("Niente da salvare: inserisci almeno un dato.");
 
@@ -376,8 +375,6 @@
   // ===== GIORNATA LOAD + TABLE =====
   function loadGiornata() {
     const dateISO = giorData.value || toISODate(new Date());
-    if (!dateISO) return setGiorStatus("Errore: data non valida.");
-
     const day = getOrCreateDay(dateISO);
 
     giorCapo.value = day.caposquadra || "";
@@ -391,8 +388,6 @@
 
     if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
     applySearchFilter();
-
-    setGiorStatus("Caricato.");
   }
 
   function renderTable(dateISO, day) {
@@ -413,38 +408,24 @@
       row.appendChild(tdGiro);
 
       const tdOps = document.createElement("td");
-      tdOps.innerHTML = (entry && (entry.op1 || entry.op2))
-        ? escapeHtml([entry.op1, entry.op2].filter(Boolean).join(" • "))
-        : `<span class="badgeEmpty">-</span>`;
+      tdOps.textContent = entry ? [entry.op1, entry.op2].filter(Boolean).join(" • ") : "-";
       row.appendChild(tdOps);
 
       const tdT = document.createElement("td");
-      tdT.innerHTML = (entry && (entry.t1 || entry.t2))
-        ? escapeHtml([entry.t1, entry.t2].filter(Boolean).join(" • "))
-        : `<span class="badgeEmpty">-</span>`;
+      tdT.textContent = entry ? [entry.t1, entry.t2].filter(Boolean).join(" • ") : "-";
       row.appendChild(tdT);
 
       const tdM = document.createElement("td");
       if (entry && (entry.matRefOp1 || entry.matRefOp2)) {
-        const op1Name = entry.op1 || "Op1";
-        const op2Name = entry.op2 || "Op2";
-        const mOp1 = materialLabelForRef(dateISO, entry.matRefOp1) || "?";
-        const mOp2 = materialLabelForRef(dateISO, entry.matRefOp2) || "?";
-
         const parts = [];
-        if (entry.matRefOp1) parts.push(`${op1Name} -> ${mOp1}`);
-        if (entry.op2 && entry.matRefOp2) parts.push(`${op2Name} -> ${mOp2}`);
-
-        tdM.textContent = parts.length ? parts.join(" • ") : "-";
-      } else {
-        tdM.innerHTML = `<span class="badgeEmpty">-</span>`;
-      }
+        if (entry.matRefOp1) parts.push(`${entry.op1 || "Op1"} -> ${materialLabelForRef(dateISO, entry.matRefOp1) || ""}`);
+        if (entry.op2 && entry.matRefOp2) parts.push(`${entry.op2 || "Op2"} -> ${materialLabelForRef(dateISO, entry.matRefOp2) || ""}`);
+        tdM.textContent = parts.join(" • ") || "-";
+      } else tdM.textContent = "-";
       row.appendChild(tdM);
 
       const tdN = document.createElement("td");
-      tdN.innerHTML = (entry && entry.note)
-        ? escapeHtml(entry.note)
-        : `<span class="badgeEmpty">-</span>`;
+      tdN.textContent = entry?.note || "-";
       row.appendChild(tdN);
 
       const tdA = document.createElement("td");
@@ -478,31 +459,15 @@
   }
 
   function buildRowSearchBlob(g, entry) {
-    const parts = [];
-    parts.push(g.label);
-    if (entry) {
-      parts.push(entry.op1 || "");
-      parts.push(entry.op2 || "");
-      parts.push(entry.t1 || "");
-      parts.push(entry.t2 || "");
-      parts.push(entry.note || "");
-    }
+    const parts = [g.label];
+    if (entry) parts.push(entry.op1 || "", entry.op2 || "", entry.t1 || "", entry.t2 || "", entry.note || "");
     return parts.join(" ").toLowerCase();
   }
 
   function applySearchFilter() {
     const q = (giorCerca.value || "").trim().toLowerCase();
-    if (!lastRenderedRows.length) return;
-
-    if (!q) {
-      lastRenderedRows.forEach(r => r.style.display = "");
-      return;
-    }
-
-    lastRenderedRows.forEach(r => {
-      const blob = r.dataset.search || "";
-      r.style.display = blob.includes(q) ? "" : "none";
-    });
+    if (!q) return lastRenderedRows.forEach(r => r.style.display = "");
+    lastRenderedRows.forEach(r => r.style.display = (r.dataset.search || "").includes(q) ? "" : "none");
   }
 
   function startEditFromGiornata(dateISO, giroId) {
@@ -527,22 +492,18 @@
     editContext = { dateISO, giroId };
     btnAnnullaModifica.classList.remove("hidden");
     setInsStatus(`Modifica: ${formatDateIT(dateISO)} • ${labelForGiro(day, giroId)}`);
-
     updateWeekdayHints();
     openTab("tab-inserisci");
   }
 
   function labelForGiro(day, giroId) {
     if (DEFAULT_GIRI.includes(giroId)) return `Giro ${giroId}`;
-    const specials = Array.isArray(day.specialGiri) ? day.specialGiri : [];
-    const s = specials.find(x => x.id === giroId);
+    const s = (day.specialGiri || []).find(x => x.id === giroId);
     return s ? `Speciale: ${s.label}` : giroId;
   }
 
   function deleteEntry(dateISO, giroId) {
-    const ok = confirm(`Eliminare i dati per ${formatDateIT(dateISO)} • ${giroId}?`);
-    if (!ok) return;
-
+    if (!confirm(`Eliminare i dati per ${formatDateIT(dateISO)} • ${giroId}?`)) return;
     const day = getOrCreateDay(dateISO);
     if (day.giri && day.giri[giroId]) {
       delete day.giri[giroId];
@@ -573,23 +534,17 @@
 
     giorGiroSpeciale.value = "";
     setGiorStatus("Giro speciale aggiunto.");
-
     loadGiornata();
     if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
   }
 
   function removeSpecialGiro(dateISO, giroId) {
-    const ok = confirm("Rimuovere questo giro speciale dalla giornata? (Eliminerà anche i dati compilati per quel giro.)");
-    if (!ok) return;
-
+    if (!confirm("Rimuovere questo giro speciale dalla giornata? (Eliminerà anche i dati compilati per quel giro.)")) return;
     const day = getOrCreateDay(dateISO);
-    day.specialGiri = Array.isArray(day.specialGiri) ? day.specialGiri : [];
-    day.specialGiri = day.specialGiri.filter(x => x.id !== giroId);
+    day.specialGiri = (day.specialGiri || []).filter(x => x.id !== giroId);
     if (day.giri && day.giri[giroId]) delete day.giri[giroId];
-
     db.dates[dateISO] = day;
     saveDB();
-
     setGiorStatus("Giro speciale rimosso.");
     loadGiornata();
     if ((insData.value || "") === dateISO) rebuildGiroSelectForInsert();
@@ -599,12 +554,9 @@
   function onSaveCaposquadra() {
     const dateISO = giorData.value || toISODate(new Date());
     const capo = normalizeText(giorCapo.value);
-
     const day = getOrCreateDay(dateISO);
     day.caposquadra = capo;
-
     if (capo) pushCapoIfNeeded(capo);
-
     db.dates[dateISO] = day;
     saveDB();
     refreshDatalists();
@@ -613,11 +565,8 @@
 
   function onSaveNoteGiornata() {
     const dateISO = giorData.value || toISODate(new Date());
-    const note = (giorNote.value || "").trim();
-
     const day = getOrCreateDay(dateISO);
-    day.noteGiornata = note;
-
+    day.noteGiornata = (giorNote.value || "").trim();
     db.dates[dateISO] = day;
     saveDB();
     setGiorStatus("Note giornata salvate.");
@@ -627,12 +576,10 @@
   function onCopiaDaIeri() {
     const dateISO = giorData.value || toISODate(new Date());
     const yISO = addDaysISO(dateISO, -1);
-
     const yDay = db.dates?.[yISO];
     if (!yDay) return setGiorStatus(`Nessuna giornata trovata per ieri (${formatDateIT(yISO)}).`);
 
     const day = getOrCreateDay(dateISO);
-
     day.caposquadra = (yDay.caposquadra || "").trim();
     day.material1 = (yDay.material1 || "").trim();
     day.material2 = (yDay.material2 || "").trim();
@@ -640,13 +587,12 @@
 
     db.dates[dateISO] = day;
     saveDB();
-
     setGiorStatus(`Copiato da ieri (${formatDateIT(yISO)}).`);
     loadGiornata();
   }
 
-  // ===== EXPORT PDF (pulito ASCII) =====
-  function onExportPdf() {
+  // ===== EXPORT PDF (NO SAVE AS) =====
+  function onExportPdfOpen() {
     const jsPDF = window.jspdf?.jsPDF;
     if (!jsPDF || typeof jsPDF !== "function") {
       setGiorStatus("PDF: libreria non caricata. Serve internet.");
@@ -657,26 +603,29 @@
       return;
     }
 
+    // libera eventuale URL precedente
+    if (lastPdfUrl) {
+      try { URL.revokeObjectURL(lastPdfUrl); } catch {}
+      lastPdfUrl = null;
+    }
+
     const dateISO = giorData.value || toISODate(new Date());
     const day = getOrCreateDay(dateISO);
 
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
 
-    const titolo = pdfSafe("Giornaliera Giri");
-    const sottotitolo = pdfSafe(formatWeekdayItalian(dateISO)); // qui toglie l’accento
-
-    const capo = pdfSafe((day.caposquadra || "").trim() || "-");
-    const m1 = pdfSafe((day.material1 || "").trim() || "-");
-    const m2 = pdfSafe((day.material2 || "").trim() || "-");
-    const noteG = pdfSafe((day.noteGiornata || "").trim() || "-");
-
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.text(titolo, 40, 40);
+    doc.text(pdfSafe("Giornaliera Giri"), 40, 40);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    doc.text(sottotitolo, 40, 62);
+    doc.text(pdfSafe(formatWeekdayItalian(dateISO)), 40, 62);
+
+    const capo = (day.caposquadra || "").trim() || "-";
+    const m1 = (day.material1 || "").trim() || "-";
+    const m2 = (day.material2 || "").trim() || "-";
+    const noteG = (day.noteGiornata || "").trim() || "-";
 
     doc.setFontSize(10);
     doc.text(pdfSafe(`Caposquadra: ${capo}   Materiale 1: ${m1}   Materiale 2: ${m2}`), 40, 84);
@@ -688,8 +637,8 @@
     const head = [[ "Giro", "Operatori", "Furgoni", "Ripartizione materiali", "Note giro" ]];
     const body = allGiri.map(g => {
       const e = giriData[g.id] || {};
-      const ops = pdfSafe([e.op1, e.op2].filter(Boolean).join(" • ") || "-");
-      const t = pdfSafe([e.t1, e.t2].filter(Boolean).join(" • ") || "-");
+      const ops = [e.op1, e.op2].filter(Boolean).join(" • ") || "-";
+      const t = [e.t1, e.t2].filter(Boolean).join(" • ") || "-";
 
       const rip = [];
       if (e.matRefOp1) rip.push(`${e.op1 || "Op1"} -> ${materialLabelForRef(dateISO, e.matRefOp1) || ""}`);
@@ -697,8 +646,8 @@
 
       return [
         pdfSafe(g.label),
-        ops,
-        t,
+        pdfSafe(ops),
+        pdfSafe(t),
         pdfSafe(rip.join(" • ") || "-"),
         pdfSafe((e.note || "").trim() || "-")
       ];
@@ -713,27 +662,37 @@
       margin: { left: 40, right: 40 }
     });
 
-    // nome file senza spazi, estensione già pronta
-    const fileName = `GiornalieraGiri_${dateISO}.pdf`;
-
-    // Prova download
+    // crea blob e apri
     try {
-      doc.save(fileName);
-      setGiorStatus(`PDF generato: ${fileName}`);
-    } catch {
-      // fallback: apri il PDF
-      try {
-        const blob = doc.output("blob");
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
-        setGiorStatus("PDF aperto: salvalo/condividilo dal viewer.");
-      } catch {
-        setGiorStatus("Impossibile generare il PDF su questa WebView.");
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      lastPdfUrl = url;
+
+      // Tentativo: apri viewer
+      const w = window.open(url, "_blank");
+      if (w) {
+        setGiorStatus("PDF aperto: salva/condividi dal viewer (così niente Save as).");
+        return;
       }
+
+      // Se window.open è bloccato: crea un link "Apri PDF"
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.textContent = "Apri PDF";
+      a.style.display = "inline-block";
+      a.style.marginTop = "8px";
+      a.style.fontWeight = "900";
+      a.style.color = "#e7eefc";
+      giorStatus.innerHTML = "";
+      giorStatus.appendChild(document.createTextNode("Popup bloccato. Tocca: "));
+      giorStatus.appendChild(a);
+    } catch {
+      setGiorStatus("Impossibile aprire il PDF su questa WebView.");
     }
   }
 
-  // Converte testo “pericoloso” in ASCII (niente accenti/simboli)
+  // ===== TEXT SAFE FOR PDF =====
   function pdfSafe(s) {
     const str = String(s ?? "");
     const map = {
@@ -749,7 +708,7 @@
       .split("")
       .map(ch => map[ch] ?? ch)
       .join("")
-      .replace(/[^\x20-\x7E]/g, ""); // elimina qualunque altro carattere fuori ASCII
+      .replace(/[^\x20-\x7E]/g, "");
   }
 
   // ===== HELPERS =====
@@ -783,7 +742,6 @@
   function updateWeekdayHints() {
     const d1 = insData.value;
     insWeekdayHint.textContent = d1 ? formatWeekdayItalian(d1) : "";
-
     const d2 = giorData.value;
     giorWeekday.textContent = d2 ? formatWeekdayItalian(d2) : "";
   }
@@ -825,13 +783,8 @@
     return toISODate(d);
   }
 
-  function normalizeText(s) {
-    return (s || "").trim().replace(/\s+/g, " ");
-  }
-
-  function normalizeTarga(s) {
-    return (s || "").trim().toUpperCase().replace(/\s+/g, "");
-  }
+  function normalizeText(s) { return (s || "").trim().replace(/\s+/g, " "); }
+  function normalizeTarga(s) { return (s || "").trim().toUpperCase().replace(/\s+/g, ""); }
 
   function pushOperatoreIfNeeded(name) {
     const n = (name || "").trim();
@@ -854,19 +807,6 @@
     if (!exists) db.caposquadraList.push(n);
   }
 
-  function rebuildSelect(sel, opts) {
-    const current = sel.value;
-    sel.innerHTML = "";
-    opts.forEach(o => {
-      const opt = document.createElement("option");
-      opt.value = o.v;
-      opt.textContent = o.t;
-      sel.appendChild(opt);
-    });
-    sel.value = opts.some(o => o.v === current) ? current : opts[0].v;
-  }
-
-  // ===== DB =====
   function loadDB() {
     try {
       const raw = localStorage.getItem(APP_KEY);
@@ -879,9 +819,7 @@
     }
   }
 
-  function saveDB() {
-    try { localStorage.setItem(APP_KEY, JSON.stringify(db)); } catch {}
-  }
+  function saveDB() { try { localStorage.setItem(APP_KEY, JSON.stringify(db)); } catch {} }
 
   function getOrCreateDay(dateISO) {
     const existing = db.dates[dateISO];
@@ -894,14 +832,7 @@
       existing.specialGiri = Array.isArray(existing.specialGiri) ? existing.specialGiri : [];
       return existing;
     }
-    return {
-      caposquadra: "",
-      noteGiornata: "",
-      material1: "",
-      material2: "",
-      specialGiri: [],
-      giri: {}
-    };
+    return { caposquadra:"", noteGiornata:"", material1:"", material2:"", specialGiri:[], giri:{} };
   }
 
   function uniqueSorted(arr) {
@@ -919,17 +850,6 @@
     return out;
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, ch => ({
-      "&":"&amp;",
-      "<":"&lt;",
-      ">":"&gt;",
-      '"':"&quot;",
-      "'":"&#39;"
-    }[ch]));
-  }
-
-  // ===== STATUS =====
   function setInsStatus(msg) { insStatus.textContent = msg || ""; }
   function setGiorStatus(msg) { giorStatus.textContent = msg || ""; }
 })();
